@@ -1,36 +1,33 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-
-// Firebase Imports
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, doc, setDoc, collection, query, onSnapshot, orderBy, serverTimestamp, getDocs, addDoc } from 'firebase/firestore';
-
-// Lucide Icons for aesthetic and functionality
-import { Sprout, LogIn, UserPlus, Home, Info, Mail, Sun, TrendingUp, DollarSign, Cloud, History, BarChart, Wheat, X, ArrowLeftRight, Loader2, Menu, Check, Lock, MapPin, Phone, MessageSquare, Briefcase, ChevronDown, FlaskConical, Globe, Ruler, Droplet, Thermometer, Handshake, Barcode, User, Gauge } from 'lucide-react';
-
-// External Library for Charts (using react-chartjs-2 for the dashboard analytics)
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend } from 'chart.js';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  Sprout, Cloud, Thermometer, Droplet, Wind, Sun, 
+  TrendingUp, AlertTriangle, Search, Menu, X, 
+  ChevronRight, ChevronDown, MapPin, Phone, Mail, 
+  User, Lock, LogIn, UserPlus, BarChart, 
+  Calendar, FileText, CheckCircle, HelpCircle,
+  Wheat, DollarSign, Activity, Globe, FlaskConical,
+  MessageSquare, ArrowLeftRight, Gauge, Barcode, Loader2, Briefcase
+} from 'lucide-react';
 import { Line, Doughnut } from 'react-chartjs-2';
+import { 
+  Chart as ChartJS, 
+  CategoryScale, 
+  LinearScale, 
+  PointElement, 
+  LineElement, 
+  Title, 
+  Tooltip, 
+  Legend, 
+  ArcElement 
+} from 'chart.js';
 
-// Register Chart.js components
 ChartJS.register(
-  CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend
+  CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, ArcElement
 );
 
-// --- 1. FIREBASE & AUTH SETUP (Mandatory Globals) ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-// IMPORTANT: initialAuthToken is only used for the initial setup.
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; 
+const API_BASE_URL = "http://127.0.0.1:8000";
 
-let app, db, auth;
-if (firebaseConfig) {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-}
-
-// --- 2. TRANSLATION DATA (English and Hindi) ---
+// --- 2. TRANSLATION DATA ---
 const translations = {
   en: {
     APP_NAME: "AgriOptima",
@@ -75,7 +72,6 @@ const translations = {
     CONTACT_US: "Contact Us",
     SEND: "Send Message",
     MESSAGE: "Message",
-    // New Translations for Modal & Prediction
     CROP_DETAILS_TITLE: "Crop Details & Requirements",
     BOTANY: "Botany & Breed",
     OPTIMAL_CONDITIONS: "Optimal Conditions",
@@ -133,7 +129,7 @@ const translations = {
     ERROR_SIGNUP: "साइन अप विफल। कृपया फिर से प्रयास करें।",
     WELCOME: "आपके स्मार्ट फार्मिंग डैशबोर्ड पर आपका स्वागत है",
     HUMIDITY: "नमी",
-    MOST_SUग्GEजTED: "सबसे अधिक सुझाई गई फसल",
+    MOST_SUGGESTED: "सबसे अधिक सुझाई गई फसल",
     TOTAL_PREDICTIONS: "कुल भविष्यवाणियाँ",
     LAST_PROFIT: "अंतिम लाभ अनुमान",
     RECOMMENDED: "अनुशंसित फसलें",
@@ -148,7 +144,6 @@ const translations = {
     CONTACT_US: "हमसे संपर्क करें",
     SEND: "संदेश भेजें",
     MESSAGE: "संदेश",
-    // New Translations for Modal & Prediction
     CROP_DETAILS_TITLE: "फसल विवरण और आवश्यकताएँ",
     BOTANY: "वनस्पति और नस्ल",
     OPTIMAL_CONDITIONS: "इष्टतम शर्तें",
@@ -180,9 +175,8 @@ const translations = {
   },
 };
 
-// --- 3. MOCK DATA (For Dashboard Visualization) ---
+// --- 3. MOCK DATA ---
 const mockDashboardData = {
-  // Matches the image structure
   user: {
     name: "Saloni",
     temperature: 32,
@@ -237,153 +231,7 @@ const mockDashboardData = {
   }
 };
 
-// --- MOCK CROP DETAILS (Expanded to over 60 varieties - CLEANED FOR DUPLICATES) ---
-const mockCropDetails = {
-    "Rice": { botany: "Oryza sativa. Semi-aquatic grass, staple food. Requires high heat and heavy rain.", breed: "Basmati, Sona Masuri.", profit: "₹75,000", requirements: { temp: "25-35", rainfall: "1200-1500", ph: "5.5-6.5", n: "60-90", p: "30-40", k: "30-40" }, image: 'https://placehold.co/600x400/228B22/FFFFFF?text=Rice+Paddy' },
-    "Wheat": { botany: "Triticum aestivum. Temperate cereal, needs cool, dry weather.", breed: "Durum Wheat, Bread Wheat.", profit: "₹60,000", requirements: { temp: "15-25", rainfall: "500-1000", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/B8860B/FFFFFF?text=Wheat+Crop' },
-    "Maize": { botany: "Zea mays. Tropical cereal, highly adaptable. Requires warm temp and deep soil.", breed: "Sweet Corn, Dent Corn.", profit: "₹55,000", requirements: { temp: "20-30", rainfall: "600-900", ph: "6.0-7.0", n: "100-150", p: "50-70", k: "50-70" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Maize+Corn' },
-    "Jowar (Sorghum)": { botany: "Sorghum bicolor. Drought-tolerant millet.", breed: "CSH Series.", profit: "₹30,000", requirements: { temp: "25-35", rainfall: "300-600", ph: "6.0-7.5", n: "50-80", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/8B4513/FFFFFF?text=Jowar+Sorghum' },
-    "Bajra (Pearl Millet)": { botany: "Pennisetum glaucum. Hardy, short-duration millet.", breed: "Hybrid.", profit: "₹28,000", requirements: { temp: "25-35", rainfall: "250-500", ph: "6.0-7.5", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/D2B48C/000000?text=Pearl+Millet+Bajra' },
-    "Ragi (Finger Millet)": { botany: "Eleusine coracana. Highly nutritious, resilient millet.", breed: "Indaf series.", profit: "₹35,000", requirements: { temp: "20-30", rainfall: "500-1000", ph: "5.0-6.5", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/A9A9A9/FFFFFF?text=Finger+Millet+Ragi' },
-    "Gram": { botany: "Cicer arietinum. Cool season pulse crop.", breed: "Kabuli, Desi.", profit: "₹50,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/BDB76B/000000?text=Chickpea+Gram' },
-    "Tur/Arhar": { botany: "Cajanus cajan. Pigeon pea, long-duration pulse.", breed: "ICPL-87, Pusa 992.", profit: "₹65,000", requirements: { temp: "25-35", rainfall: "600-1000", ph: "6.0-7.5", n: "20-40", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/F4A460/FFFFFF?text=Pigeon+Pea' },
-    "Urad": { botany: "Vigna mungo. Black gram, requires warm, humid climate.", breed: "T-9, Pant U-19.", profit: "₹48,000", requirements: { temp: "25-35", rainfall: "600-900", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/556B2F/FFFFFF?text=Black+Gram+Urad' },
-    "Moong": { botany: "Vigna radiata. Green gram, short-duration summer crop.", breed: "Pusa Vishal.", profit: "₹45,000", requirements: { temp: "25-35", rainfall: "600-900", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Green+Gram+Moong' },
-    "Masur": { botany: "Lens culinaris. Lentil, Rabi season pulse.", breed: "Masoor.", profit: "₹52,000", requirements: { temp: "18-30", rainfall: "400-600", ph: "6.0-8.0", n: "10-20", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/6B8E23/FFFFFF?text=Lentil+Masur' },
-    "Sugarcane": { botany: "Saccharum officinarum. Tall grass for sugar. Needs long, hot season.", breed: "Co-86032, CoC-671.", profit: "₹1,20,000", requirements: { temp: "20-32", rainfall: "1000-1500", ph: "6.0-7.5", n: "150-250", p: "50-80", k: "100-150" }, image: 'https://placehold.co/600x400/808000/FFFFFF?text=Sugarcane+Stalks' },
-    "Cotton": { botany: "Gossypium spp. Grown for fiber. Needs high temp and moderate rain.", breed: "Bt Cotton, Hybrid.", profit: "₹85,000", requirements: { temp: "21-30", rainfall: "500-1000", ph: "5.5-8.5", n: "60-120", p: "30-60", k: "30-60" }, image: 'https://placehold.co/600x400/4682B4/FFFFFF?text=Cotton+Bolls' },
-    "Jute": { botany: "Corchorus olitorius. Fibre crop. Needs heavy rainfall and high humidity.", breed: "JRO-524, JRC-212.", profit: "₹70,000", requirements: { temp: "24-37", rainfall: "1500-2000", ph: "6.0-7.5", n: "50-80", p: "20-40", k: "30-60" }, image: 'https://placehold.co/600x400/D2B48C/000000?text=Jute+Fibre' },
-    "Groundnut": { botany: "Arachis hypogaea. Peanut, oilseed and pulse. Requires sandy soil.", breed: "ICGS-11, TGV-1.", profit: "₹90,000", requirements: { temp: "21-30", rainfall: "500-700", ph: "6.0-7.0", n: "10-20", p: "30-50", k: "30-50" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Groundnut+Peanut' },
-    "Mustard": { botany: "Brassica spp. Oilseed, Rabi crop. Requires cool, dry weather.", breed: "Pusa Jaikisan.", profit: "₹50,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Mustard+Flower' },
-    "Soybean": { botany: "Glycine max. High-protein legume. Requires rich, well-drained soil.", breed: "JS 335, Bragg.", profit: "₹95,000", requirements: { temp: "20-30", rainfall: "600-1000", ph: "6.0-7.5", n: "20-40", p: "60-80", k: "40-60" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Soybean+Pod' },
-    "Sunflower": { botany: "Helianthus annuus. Oilseed. Tolerant of drought and temperature.", breed: "Hybrid.", profit: "₹60,000", requirements: { temp: "25-30", rainfall: "500-800", ph: "6.0-7.5", n: "60-90", p: "40-60", k: "40-60" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Sunflower+Head' },
-    "Sesame": { botany: "Sesamum indicum. Oilseed. Drought tolerant.", breed: "T-13.", profit: "₹45,000", requirements: { temp: "25-35", rainfall: "500-800", ph: "5.5-7.5", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/F0E68C/000000?text=Sesame+Seed' },
-    "Tobacco": { botany: "Nicotiana spp. Commercial leaf crop. Highly specialized.", breed: "FCV, Natu.", profit: "₹1,10,000", requirements: { temp: "20-30", rainfall: "500-1000", ph: "5.0-6.0", n: "80-120", p: "40-60", k: "100-150" }, image: 'https://placehold.co/600x400/8B0000/FFFFFF?text=Tobacco+Leaf' },
-    "Tea": { botany: "Camellia sinensis. Evergreen shrub. Needs acidic soil and high rainfall.", breed: "Assam type.", profit: "₹1,50,000", requirements: { temp: "13-28", rainfall: "1500-2500", ph: "4.5-5.5", n: "150-250", p: "50-80", k: "100-150" }, image: 'https://placehold.co/600x400/006400/FFFFFF?text=Tea+Leaves' },
-    "Coffee": { botany: "Coffea spp. Requires specific tropical climate and high altitudes.", breed: "Arabica, Robusta.", profit: "₹1,80,000", requirements: { temp: "18-24", rainfall: "1500-2000", ph: "6.0-6.5", n: "50-80", p: "10-20", k: "50-80" }, image: 'https://placehold.co/600x400/8B4513/FFFFFF?text=Coffee+Beans' },
-    "Rubber": { botany: "Hevea brasiliensis. Tree crop. Needs high rainfall and humidity.", breed: "RRII 105.", profit: "₹2,00,000", requirements: { temp: "25-34", rainfall: "2000-3000", ph: "4.5-6.0", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Rubber+Tapping' },
-    "Coconut": { botany: "Cocos nucifera. Palm tree. Coastal regions, sandy soil.", breed: "Dwarf, Tall.", profit: "₹1,30,000", requirements: { temp: "25-35", rainfall: "1000-2500", ph: "5.5-7.0", n: "50-100", p: "30-50", k: "100-200" }, image: 'https://placehold.co/600x400/008080/FFFFFF?text=Coconut+Palm' },
-    "Mangoes": { botany: "Mangifera indica. Tropical fruit tree. Requires warm, frost-free climate.", breed: "Alphonso, Dasheri.", profit: "₹2,50,000", requirements: { temp: "24-30", rainfall: "800-1200", ph: "6.0-7.5", n: "50-100", p: "20-40", k: "80-120" }, image: 'https://placehold.co/600x400/FF8C00/000000?text=Mango+Fruit' },
-    "Bananas": { botany: "Musa spp. Herbaceous plant. Needs high heat and humidity.", breed: "Cavendish, Robusta.", profit: "₹1,80,000", requirements: { temp: "20-30", rainfall: "1500-2500", ph: "6.0-7.5", n: "150-300", p: "50-100", k: "300-500" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Banana+Bunch' },
-    "Citrus fruits": { botany: "Citrus spp. Includes orange, lemon. Requires moderate climate.", breed: "Nagpur orange, Lemon.", profit: "₹1,60,000", requirements: { temp: "10-35", rainfall: "700-1200", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "80-120" }, image: 'https://placehold.co/600x400/F4A460/000000?text=Orange+Lemon' },
-    "Apples": { botany: "Malus domestica. Temperate fruit. Requires chilling hours.", breed: "Fuji, Gala.", profit: "₹3,00,000", requirements: { temp: "15-25", rainfall: "1000-1500", ph: "5.5-6.5", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/FF0000/FFFFFF?text=Red+Apple' },
-    "Grapes": { botany: "Vitis vinifera. Vine fruit. Requires dry, warm summers.", breed: "Thompson Seedless.", profit: "₹2,20,000", requirements: { temp: "15-40", rainfall: "500-900", ph: "6.0-7.0", n: "60-100", p: "30-50", k: "100-150" }, image: 'https://placehold.co/600x400/800080/FFFFFF?text=Grape+Vine' },
-    "Potatoes": { botany: "Solanum tuberosum. Tuber crop. Needs cool weather, well-drained soil.", breed: "Kufri Jyoti.", profit: "₹70,000", requirements: { temp: "15-20", rainfall: "500-800", ph: "5.0-6.5", n: "100-150", p: "80-100", k: "120-150" }, image: 'https://placehold.co/600x400/CD853F/FFFFFF?text=Potato+Tuber' },
-    "Onions": { botany: "Allium cepa. Bulb vegetable. Requires moderate temperature.", breed: "Pusa Red.", profit: "₹65,000", requirements: { temp: "15-25", rainfall: "600-900", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "80-120" }, image: 'https://placehold.co/600x400/FFFFFF/000000?text=Onion+Bulb' },
-    "Tomatoes": { botany: "Solanum lycopersicum. Fruit vegetable. Wide adaptability.", breed: "Pusa Ruby.", profit: "₹75,000", requirements: { temp: "20-30", rainfall: "600-1000", ph: "6.0-7.0", n: "100-150", p: "50-80", k: "80-120" }, image: 'https://placehold.co/600x400/FF6347/FFFFFF?text=Tomato+Fruit' },
-    "Brinjal (Eggplant)": { botany: "Solanum melongena. Warm season vegetable.", breed: "Pusa Purple.", profit: "₹60,000", requirements: { temp: "25-35", rainfall: "600-1000", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/800080/FFFFFF?text=Brinjal+Eggplant' },
-    "Cauliflower": { botany: "Brassica oleracea. Cool season vegetable.", breed: "Pusa Snowball.", profit: "₹55,000", requirements: { temp: "15-25", rainfall: "600-900", ph: "6.0-7.0", n: "120-150", p: "60-80", k: "80-100" }, image: 'https://placehold.co/600x400/F5F5DC/000000?text=Cauliflower+Head' },
-    "Cabbage": { botany: "Brassica oleracea. Cool season leafy vegetable.", breed: "Golden Acre.", profit: "₹50,000", requirements: { temp: "15-25", rainfall: "600-900", ph: "6.0-7.0", n: "120-150", p: "60-80", k: "80-100" }, image: 'https://placehold.co/600x400/D3D3D3/000000?text=Cabbage+Head' },
-    "Peas": { botany: "Pisum sativum. Cool season pulse/vegetable.", breed: "Arkel.", profit: "₹40,000", requirements: { temp: "10-20", rainfall: "400-600", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/008000/FFFFFF?text=Peas+Pod' },
-    "Black pepper": { botany: "Piper nigrum. Spice vine. Needs hot, humid tropical climate.", breed: "Panniyur 1.", profit: "₹3,50,000", requirements: { temp: "20-30", rainfall: "2000-3000", ph: "5.5-6.5", n: "100-150", p: "50-80", k: "150-200" }, image: 'https://placehold.co/600x400/000000/FFFFFF?text=Black+Pepper+Crop' },
-    "Cardamom": { botany: "Elettaria cardamomum. Spice. Needs humid, shaded environment.", breed: "Njallani.", profit: "₹4,00,000", requirements: { temp: "15-30", rainfall: "2500-4000", ph: "5.0-6.5", n: "100-150", p: "50-80", k: "100-150" }, image: 'https://placehold.co/600x400/8B4513/FFFFFF?text=Cardamom+Pods' },
-    "Dry chillies": { botany: "Capsicum annuum. Spice/vegetable. Needs warm, dry climate.", breed: "Teja.", profit: "₹1,00,000", requirements: { temp: "20-30", rainfall: "600-1200", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/FF0000/FFFFFF?text=Red+Chilli' },
-    "Turmeric": { botany: "Curcuma longa. Spice rhizome. Needs warm, humid conditions.", breed: "Alleppey.", profit: "₹80,000", requirements: { temp: "20-30", rainfall: "1000-2000", ph: "6.0-7.5", n: "60-90", p: "30-50", k: "90-120" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Turmeric+Root' },
-    "Ginger": { botany: "Zingiber officinale. Spice rhizome. Needs warm, humid conditions.", breed: "Nadia.", profit: "₹75,000", requirements: { temp: "25-35", rainfall: "1500-3000", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "100-150" }, image: 'https://placehold.co/600x400/DAA520/000000?text=Ginger+Root' },
-    "Coriander": { botany: "Coriandrum sativum. Spice/herb. Cool season crop.", breed: "Rajendra Swati.", profit: "₹30,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-8.0", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Coriander+Leaf' },
-    "Berseem": { botany: "Trifolium alexandrinum. Fodder crop. Rabi season.", breed: "Mescavi.", profit: "₹25,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/7CFC00/000000?text=Berseem+Clover' },
-    "Oats": { botany: "Avena sativa. Cereal/Fodder. Cool season crop.", breed: "Kent.", profit: "₹35,000", requirements: { temp: "10-20", rainfall: "500-800", ph: "6.0-7.5", n: "60-90", p: "30-50", k: "30-50" }, image: 'https://placehold.co/600x400/D2B48C/000000?text=Oats+Stalk' },
-    "Sudan grass": { botany: "Sorghum sudanense. Fodder grass.", breed: "SSG-59-3.", profit: "₹20,000", requirements: { temp: "25-35", rainfall: "400-800", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "40-60" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Sudan+Grass' },
-    "Napier grass": { botany: "Pennisetum purpureum. Perennial fodder grass.", breed: "Hybrid Napier.", profit: "₹30,000", requirements: { temp: "25-35", rainfall: "1000-2000", ph: "5.5-7.0", n: "100-150", p: "50-80", k: "80-120" }, image: 'https://placehold.co/600x400/008000/FFFFFF?text=Napier+Grass' },
-    "Lucerne": { botany: "Medicago sativa. Alfalfa, perennial fodder.", breed: "Anand-2.", profit: "₹35,000", requirements: { temp: "15-30", rainfall: "400-800", ph: "6.5-7.5", n: "0-20", p: "50-80", k: "50-80" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Lucerne+Alfalfa' },
-    "Castor": { botany: "Ricinus communis. Non-edible oilseed.", breed: "GCH-7.", profit: "₹65,000", requirements: { temp: "20-30", rainfall: "500-800", ph: "6.0-7.5", n: "60-90", p: "30-50", k: "30-50" }, image: 'https://placehold.co/600x400/B8860B/FFFFFF?text=Castor+Oilseed' },
-    "Linseed": { botany: "Linum usitatissimum. Flaxseed, oilseed.", breed: "Neelam.", profit: "₹50,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/F0E68C/000000?text=Linseed+Flax' },
-    "Safflower": { botany: "Carthamus tinctorius. Oilseed. Drought tolerant.", breed: "Bima.", profit: "₹40,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-8.0", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/DAA520/000000?text=Safflower+Flower' },
-    "Niger seed": { botany: "Guizotia abyssinica. Oilseed. Hardy crop.", breed: "RCR-18.", profit: "₹35,000", requirements: { temp: "20-30", rainfall: "500-1000", ph: "5.0-7.0", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/696969/FFFFFF?text=Niger+Seed' },
-    "Rapeseed": { botany: "Brassica napus. Oilseed.", breed: "Hybrid.", profit: "₹55,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "20-40" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Rapeseed+Plant' },
-    "Kusum seed": { botany: "Schleichera oleosa. Minor oilseed.", breed: "Local.", profit: "₹25,000", requirements: { temp: "25-35", rainfall: "800-1500", ph: "6.0-7.5", n: "30-50", p: "20-30", k: "30-50" }, image: 'https://placehold.co/600x400/A0522D/FFFFFF?text=Kusum+Tree' },
-    "Pongam seeds": { botany: "Millettia pinnata. Minor oilseed.", breed: "Local.", profit: "₹30,000", requirements: { temp: "25-35", rainfall: "800-1500", ph: "6.0-7.5", n: "30-50", p: "20-30", k: "30-50" }, image: 'https://placehold.co/600x400/BDB76B/000000?text=Pongam+Seeds' },
-    "Cowpeas (Lobia)": { botany: "Vigna unguiculata. Pulse/vegetable. Warm season.", breed: "Pusa Komal.", profit: "₹40,000", requirements: { temp: "25-35", rainfall: "500-800", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Cowpeas+Lobia' },
-    "Horse gram": { botany: "Macrotyloma uniflorum. Drought-tolerant pulse.", breed: "GPM-6.", profit: "₹35,000", requirements: { temp: "25-35", rainfall: "300-500", ph: "6.0-7.5", n: "20-30", p: "30-50", k: "20-30" }, image: 'https://placehold.co/600x400/A0522D/FFFFFF?text=Horse+Gram' },
-    "Rajma (Kidney beans)": { botany: "Phaseolus vulgaris. Pulse. Needs cooler temperature.", breed: "PDR-14.", profit: "₹55,000", requirements: { temp: "15-25", rainfall: "600-1000", ph: "6.0-7.5", n: "20-40", p: "40-60", k: "30-50" }, image: 'https://placehold.co/600x400/B22222/FFFFFF?text=Rajma+Kidney+Beans' },
-    "Moth": { botany: "Vigna aconitifolia. Moth bean. Drought tolerant pulse.", breed: "RMO-40.", profit: "₹30,000", requirements: { temp: "30-40", rainfall: "200-500", ph: "6.0-8.0", n: "20-30", p: "30-50", k: "20-30" }, image: 'https://placehold.co/600x400/DAA520/000000?text=Moth+Bean' },
-    "Khesari dal": { botany: "Lathyrus sativus. Grass pea. Resilient pulse.", breed: "Bio-L-212.", profit: "₹40,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "20-30", p: "40-60", k: "20-30" }, image: 'https://placehold.co/600x400/87CEFA/000000?text=Khesari+Dal' },
-    "Foxtail millet (Kangni)": { botany: "Setaria italica. Minor millet.", breed: "Sia 3085.", profit: "₹30,000", requirements: { temp: "25-35", rainfall: "400-600", ph: "5.5-7.0", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/F0E68C/000000?text=Foxtail+Millet' },
-    "Kodo millet": { botany: "Paspalum scrobiculatum. Minor millet.", breed: "JK-48.", profit: "₹32,000", requirements: { temp: "25-35", rainfall: "500-900", ph: "5.5-7.0", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/DAA520/000000?text=Kodo+Millet' },
-    "Little millet": { botany: "Panicum sumatrense. Minor millet.", breed: "Olm 203.", profit: "₹30,000", requirements: { temp: "25-35", rainfall: "500-900", ph: "5.5-7.0", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/8B4513/FFFFFF?text=Little+Millet' },
-    "Barnyard millet": { botany: "Echinochloa frumentacea. Minor millet.", breed: "VL 172.", profit: "₹28,000", requirements: { temp: "25-35", rainfall: "400-800", ph: "5.5-7.0", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/A0522D/FFFFFF?text=Barnyard+Millet' },
-    "Buckwheat": { botany: "Fagopyrum esculentum. Pseudo-cereal.", breed: "Sweet Buckwheat.", profit: "₹45,000", requirements: { temp: "15-25", rainfall: "500-800", ph: "5.0-6.5", n: "20-40", p: "30-50", k: "30-50" }, image: 'https://placehold.co/600x400/BDB76B/000000?text=Buckwheat' },
-    "Amaranth seed": { botany: "Amaranthus spp. Pseudo-cereal.", breed: "Annapurna.", profit: "₹40,000", requirements: { temp: "20-30", rainfall: "600-1000", ph: "6.0-7.5", n: "40-60", p: "20-40", k: "30-50" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Amaranth+Seed' },
-    "Cucumber": { botany: "Cucumis sativus. Vine vegetable.", breed: "Pusa Sanyog.", profit: "₹50,000", requirements: { temp: "20-30", rainfall: "600-1000", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/90EE90/000000?text=Cucumber' },
-    "Bitter gourd": { botany: "Momordica charantia. Vine vegetable.", breed: "Pusa Do Mausami.", profit: "₹45,000", requirements: { temp: "25-35", rainfall: "600-1000", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Bitter+Gourd' },
-    "Muskmelon": { botany: "Cucumis melo. Fruit.", breed: "Pusa Rasraj.", profit: "₹70,000", requirements: { temp: "25-35", rainfall: "500-800", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Muskmelon' },
-    "Watermelon": { botany: "Citrullus lanatus. Fruit. Needs warm weather.", breed: "Sugar Baby.", profit: "₹80,000", requirements: { temp: "25-35", rainfall: "500-800", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/B22222/FFFFFF?text=Watermelon' },
-    "Pumpkin": { botany: "Cucurbita moschata. Vegetable/fruit.", breed: "Arka Suryamukhi.", profit: "₹60,000", requirements: { temp: "20-30", rainfall: "600-1000", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/FF8C00/000000?text=Pumpkin' },
-    "Garlic": { botany: "Allium sativum. Spice/vegetable. Cool season.", breed: "Yamuna Safed.", profit: "₹90,000", requirements: { temp: "10-25", rainfall: "500-800", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "80-120" }, image: 'https://placehold.co/600x400/FFFFFF/000000?text=Garlic' },
-    "Carrots": { botany: "Daucus carota. Root vegetable. Cool season.", breed: "Pusa Kesar.", profit: "₹55,000", requirements: { temp: "15-20", rainfall: "500-800", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/FF8C00/000000?text=Carrots' },
-    "Spinach": { botany: "Spinacia oleracea. Leafy vegetable. Cool season.", breed: "Pusa Jyoti.", profit: "₹35,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "40-60" }, image: 'https://placehold.co/600x400/008000/FFFFFF?text=Spinach' },
-    "Lady's finger (Okra/Bhindi)": { botany: "Abelmoschus esculentus. Warm season vegetable.", breed: "Pusa A-4.", profit: "₹65,000", requirements: { temp: "25-35", rainfall: "600-1000", ph: "6.0-7.0", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Okra+Bhindi' },
-    "Apricot": { botany: "Prunus armeniaca. Temperate fruit.", breed: "Kaisha.", profit: "₹2,00,000", requirements: { temp: "15-30", rainfall: "800-1200", ph: "6.0-7.0", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/FF8C00/000000?text=Apricot+Fruit' },
-    "Peach": { botany: "Prunus persica. Temperate fruit.", breed: "Flordasun.", profit: "₹2,10,000", requirements: { temp: "15-30", rainfall: "800-1200", ph: "6.0-7.0", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Peach+Fruit' },
-    "Pear": { botany: "Pyrus spp. Temperate fruit.", breed: "Patharnakh.", profit: "₹1,90,000", requirements: { temp: "15-25", rainfall: "800-1200", ph: "6.0-7.0", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/D3D3D3/000000?text=Pear+Fruit' },
-    "Plum": { botany: "Prunus domestica. Temperate fruit.", breed: "Satsuma.", profit: "₹1,70,000", requirements: { temp: "15-30", rainfall: "800-1200", ph: "6.0-7.0", n: "50-80", p: "20-40", k: "50-80" }, image: 'https://placehold.co/600x400/800080/FFFFFF?text=Plum+Fruit' },
-    "Pineapple": { botany: "Ananas comosus. Tropical fruit.", breed: "Kew.", profit: "₹1,50,000", requirements: { temp: "22-32", rainfall: "1000-1500", ph: "5.5-6.5", n: "80-120", p: "40-60", k: "80-120" }, image: 'https://placehold.co/600x400/FFD700/000000?text=Pineapple+Fruit' },
-    "Guava": { botany: "Psidium guajava. Tropical fruit.", breed: "Allahabad Safeda.", profit: "₹1,60,000", requirements: { temp: "20-30", rainfall: "800-1500", ph: "6.0-7.0", n: "50-100", p: "30-50", k: "50-100" }, image: 'https://placehold.co/600x400/BDB76B/000000?text=Guava+Fruit' },
-    "Papaya": { botany: "Carica papaya. Tropical fruit.", breed: "Pusa Delicious.", profit: "₹1,20,000", requirements: { temp: "25-35", rainfall: "600-1000", ph: "6.0-7.0", n: "100-150", p: "50-80", k: "100-150" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Papaya+Fruit' },
-    "Litchi": { botany: "Litchi chinensis. Tropical fruit.", breed: "Shahi.", profit: "₹2,30,000", requirements: { temp: "25-35", rainfall: "1000-1500", ph: "5.5-7.0", n: "80-120", p: "40-60", k: "80-120" }, image: 'https://placehold.co/600x400/FF6347/FFFFFF?text=Litchi+Fruit' },
-    "Cumin": { botany: "Cuminum cyminum. Spice. Cool, dry weather.", breed: "RZ-19.", profit: "₹80,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-7.5", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/D2B48C/000000?text=Cumin+Seed' },
-    "Fennel seed": { botany: "Foeniculum vulgare. Spice. Cool season.", breed: "Gujarat Fennel-1.", profit: "₹70,000", requirements: { temp: "15-25", rainfall: "400-600", ph: "6.0-7.5", n: "40-60", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/F0E68C/000000?text=Fennel+Seed' },
-    "Fenugreek seed": { botany: "Trigonella foenum-graecum. Spice/herb. Cool season.", breed: "RMT-143.", profit: "₹65,000", requirements: { temp: "15-25", rainfall: "300-500", ph: "6.0-7.5", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/FFA07A/000000?text=Fenugreek+Seed' },
-    "Cloves": { botany: "Syzygium aromaticum. Spice tree. Needs tropical, high humidity.", breed: "Local.", profit: "₹4,50,000", requirements: { temp: "20-30", rainfall: "1500-2500", ph: "6.0-7.0", n: "100-150", p: "50-80", k: "150-200" }, image: 'https://placehold.co/600x400/8B4513/FFFFFF?text=Cloves' },
-    "Tulsi (Holy Basil)": { botany: "Ocimum tenuiflorum. Medicinal herb.", breed: "Rama Tulsi.", profit: "₹40,000", requirements: { temp: "20-30", rainfall: "500-1000", ph: "6.0-7.5", n: "30-50", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/3CB371/FFFFFF?text=Tulsi+Basil' },
-    "Aloe Vera": { botany: "Aloe barbadensis miller. Medicinal plant. Drought tolerant.", breed: "Local.", profit: "₹50,000", requirements: { temp: "20-30", rainfall: "300-500", ph: "6.0-8.0", n: "20-40", p: "20-30", k: "20-30" }, image: 'https://placehold.co/600x400/90EE90/000000?text=Aloe+Vera' },
-    "Mentha": { botany: "Mentha spp. Mint oil. Water intensive.", breed: "Mentha arvensis.", profit: "₹60,000", requirements: { temp: "20-30", rainfall: "800-1200", ph: "6.0-7.5", n: "80-120", p: "40-60", k: "60-90" }, image: 'https://placehold.co/600x400/008000/FFFFFF?text=Mentha+Mint' },
-    "Chandan (Sandalwood)": { botany: "Santalum album. Tree crop. Highly valuable.", breed: "Local.", profit: "₹5,00,000", requirements: { temp: "15-35", rainfall: "600-1500", ph: "6.5-7.5", n: "10-20", p: "10-20", k: "10-20" }, image: 'https://placehold.co/600x400/B8860B/FFFFFF?text=Sandalwood+Chandan' },
-    "Saffron": { botany: "Crocus sativus. Spice. Needs extreme cold and specific soil.", breed: "Kashmir.", profit: "₹10,00,000", requirements: { temp: "5-20", rainfall: "300-500", ph: "6.0-8.0", n: "20-30", p: "40-60", k: "40-60" }, image: 'https://placehold.co/600x400/800080/FFFFFF?text=Saffron+Flower' },
-};
-
-// --- MOCK PREDICTION LOGIC (Needs replacement with actual ML backend) ---
-const simulateCropPrediction = (params) => {
-  const { temperature, humidity, nLevel, pLevel, kLevel, soilType, rainfall, phLevel } = params;
-
-  // 1. HIGH VALUE CASH CROPS (Requires specific conditions)
-  if (rainfall > 2000 && temperature > 25 && phLevel < 6.5) return "Black pepper";
-  if (rainfall > 2500 && temperature > 20 && phLevel < 5.5) return "Tea";
-  if (rainfall > 1000 && temperature > 20 && nLevel > 150) return "Bananas";
-  if (rainfall < 600 && temperature < 20 && phLevel > 7.5) return "Saffron"; // Extreme cold/specific
-  
-  // 2. CEREALS (Staple foods)
-  if (soilType === 'Clay' && temperature > 25 && humidity > 60 && nLevel > 60) return "Rice";
-  if (soilType === 'Loam' && temperature < 20 && nLevel > 80) return "Wheat";
-  if (soilType === 'Silt' && temperature > 20 && pLevel > 50) return "Maize";
-  if (temperature < 25 && nLevel > 60 && phLevel > 6.0) return "Barley";
-  
-  // 3. PULSES (Nitrogen fixers, lower N requirement)
-  if (nLevel < 40 && pLevel > 40 && temperature < 30) return "Gram";
-  if (nLevel < 30 && temperature > 25 && rainfall < 800) return "Moth";
-  if (nLevel < 30 && temperature > 25 && soilType === 'Loam') return "Soybean";
-  
-  // 4. VEGETABLES/TUBERS (Specific temp windows)
-  if (temperature < 20 && kLevel > 100) return "Potatoes";
-  if (temperature < 25 && kLevel > 80 && phLevel > 6.0) return "Onions";
-  if (temperature > 20 && temperature < 30 && nLevel > 100) return "Tomatoes";
-
-  // 5. MILLETS (Drought tolerant)
-  if (rainfall < 500 && temperature > 30) return "Jowar (Sorghum)";
-  if (rainfall < 400 && temperature > 30) return "Bajra (Pearl Millet)";
-
-  // Default fallback for general conditions
-  return "Maize";
-};
-
-
-const simulateExternalAPIs = async (cropName, location) => {
-  await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network latency
-
-  const weatherSummary = `Forecast for ${location || 'N/A'}: Next 7 days expect avg high of 28°C and 60% humidity. Light rainfall expected on Day 3.`;
-
-  const details = mockCropDetails[cropName] || mockCropDetails['Rice']; // Default to Rice if new crop is missing
-
-  return {
-    weather: weatherSummary,
-    profit: details.profit,
-    // Risk is higher for very high profit or specialized crops
-    risk: details.profit.includes('3,50,000') || details.profit.includes('10,00,000') ? 'High' : (details.profit.includes('2,00,000') ? 'Medium' : 'Low'),
-  };
-};
-
 // --- 4. SHARED COMPONENTS ---
-
 const AgriOptimaLogo = () => (
   <div className="flex items-center space-x-2">
     <Sprout className="w-8 h-8 text-white md:text-green-600" fill="currentColor" />
@@ -411,13 +259,42 @@ const AuthFormInput = ({ label, name, type = 'text', value, onChange, placeholde
   </div>
 );
 
-// --- Crop Details Modal ---
+const ConditionCard = ({ Icon, label, value, unit }) => (
+    <div className="p-3 bg-gray-50 rounded-lg border">
+        <Icon className="w-5 h-5 text-green-600 mx-auto mb-1" />
+        <p className="text-xs text-gray-500 font-medium">{label}</p>
+        <p className="text-lg font-semibold text-gray-800">{value} <span className="text-sm font-normal">{unit}</span></p>
+    </div>
+);
+
 const CropDetailsModal = ({ T, cropName, onClose }) => {
-    // Safely look up the crop details
-    const cropData = mockCropDetails[cropName] || mockCropDetails["Rice"]; 
-    
-    // Convert property names back to display strings (using the T object for translation)
+    const [cropData, setCropData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const fetchCropDetails = async () => {
+            try {
+                setLoading(true);
+                const response = await fetch(`${API_BASE_URL}/crops/${cropName}`);
+                if (!response.ok) throw new Error('Failed to fetch crop details');
+                const data = await response.json();
+                setCropData(data);
+            } catch (err) {
+                console.error(err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (cropName) {
+            fetchCropDetails();
+        }
+    }, [cropName]);
+
     const displayRequirements = useMemo(() => {
+        if (!cropData) return [];
         const req = cropData.requirements;
         return [
             { label: "Temperature", value: req.temp, unit: "°C", Icon: Sun },
@@ -428,6 +305,27 @@ const CropDetailsModal = ({ T, cropName, onClose }) => {
             { label: T.K_LEVEL, value: req.k, unit: "kg/ha", Icon: Sprout },
         ];
     }, [cropData, T]);
+
+    if (!cropName) return null;
+
+    if (loading) return (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50 p-4 transition-opacity duration-300">
+             <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center">
+                <Loader2 className="w-10 h-10 animate-spin text-green-600 mb-3" />
+                <p className="text-gray-600 font-medium">Loading {cropName} details...</p>
+            </div>
+        </div>
+    );
+
+    if (error || !cropData) return (
+         <div className="fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-8 rounded-xl shadow-2xl text-center">
+                <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-3" />
+                <p className="text-gray-800 font-medium mb-4">Failed to load details for {cropName}.</p>
+                <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Close</button>
+            </div>
+        </div>
+    );
 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center z-50 p-4 transition-opacity duration-300">
@@ -443,7 +341,7 @@ const CropDetailsModal = ({ T, cropName, onClose }) => {
                 </div>
 
                 <div className="p-6 md:p-8 space-y-8">
-                    {/* Image and Profit - Made image section more prominent */}
+                    {/* Image and Profit */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
                         <div className="md:col-span-2 p-3 bg-gray-100 rounded-xl shadow-inner border">
                             <img
@@ -494,17 +392,6 @@ const CropDetailsModal = ({ T, cropName, onClose }) => {
         </div>
     );
 };
-
-const ConditionCard = ({ Icon, label, value, unit }) => (
-    <div className="p-3 bg-gray-50 rounded-lg border">
-        <Icon className="w-5 h-5 text-green-600 mx-auto mb-1" />
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
-        <p className="text-lg font-semibold text-gray-800">{value} <span className="text-sm font-normal">{unit}</span></p>
-    </div>
-);
-
-
-// --- 5. AUTHENTICATION MODAL (Login/Signup) ---
 
 const AuthModal = ({ T, isModalOpen, setIsModalOpen, setAuthType, authType, handleAuthAction }) => {
   const [formData, setFormData] = useState({});
@@ -619,23 +506,26 @@ const AuthModal = ({ T, isModalOpen, setIsModalOpen, setAuthType, authType, hand
   );
 };
 
-// --- 6. USER DASHBOARD (After Login - Matches Image) ---
+const RecommendedCropCard = ({ name, profit, image, soil, T, handleViewDetails }) => (
+  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition">
+    <img src={image} alt={name} className="w-full h-24 object-cover" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/100x70/B8860B/FFFFFF?text=Crop"; }}/>
+    <div className="p-4">
+      <p className="font-semibold text-lg text-gray-800">{name}</p>
+      <p className="text-sm text-green-600 font-medium">{profit}</p>
+      <p className="text-xs text-gray-500 mt-1">Soil: {soil}</p>
+      <button 
+          onClick={() => handleViewDetails(name)}
+          className="mt-2 w-full text-center py-2 bg-green-700 text-white rounded-lg text-sm hover:bg-green-800 transition">
+        {T.VIEW_DETAILS}
+      </button>
+    </div>
+  </div>
+);
 
-const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, toggleLanguage }) => {
+const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, toggleLanguage, handleViewDetails }) => {
   const data = mockDashboardData;
   const username = userProfile?.firstName || data.user.name;
-  
-  // State for the Crop Details Modal
-  const [selectedCrop, setSelectedCrop] = useState(null);
   const [selectedSoilFilter, setSelectedSoilFilter] = useState(T.ALL_SOILS);
-  
-  const handleViewDetails = (cropName) => {
-      setSelectedCrop(cropName);
-  };
-  
-  const handleCloseDetails = () => {
-      setSelectedCrop(null);
-  };
   
   // Filter recommended crops based on soil selection
   const filteredCrops = useMemo(() => {
@@ -649,34 +539,17 @@ const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, t
   }, [selectedSoilFilter, data.recommendedCrops, T.ALL_SOILS, T.SOIL_TYPES]);
 
 
-  const RecommendedCropCard = ({ name, profit, image, soil }) => (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition">
-      <img src={image} alt={name} className="w-full h-24 object-cover" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/100x70/B8860B/FFFFFF?text=Crop"; }}/>
-      <div className="p-4">
-        <p className="font-semibold text-lg text-gray-800">{name}</p>
-        <p className="text-sm text-green-600 font-medium">{profit}</p>
-        <p className="text-xs text-gray-500 mt-1">Soil: {soil}</p>
-        <button 
-            onClick={() => handleViewDetails(name)}
-            className="mt-2 w-full text-center py-2 bg-green-700 text-white rounded-lg text-sm hover:bg-green-800 transition">
-          {T.VIEW_DETAILS}
-        </button>
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Dashboard Header/Navigation - FIXED NAVIGATION */}
+      {/* Dashboard Header/Navigation */}
       <div className="bg-green-800 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center py-3">
-          {/* NAVIGATION ITEMS */}
           <div className="flex items-center space-x-6 text-white text-sm font-medium">
             <button onClick={() => setCurrentPage('dashboard')} className="hover:text-green-200 transition">
               <Briefcase className="w-5 h-5 inline mr-1" /> {T.DASHBOARD}
             </button>
             <button onClick={() => setCurrentPage('prediction')} className="hover:text-green-200 transition">
-              <TrendingUp className="w-5 h-5 inline mr-1" /> {T.PREDICTION} {/* DIRECT LINK */}
+              <TrendingUp className="w-5 h-5 inline mr-1" /> {T.PREDICTION}
             </button>
             <button onClick={() => setCurrentPage('crops')} className="hover:text-green-200 transition">
               <Wheat className="w-5 h-5 inline mr-1" /> {T.CROPS}
@@ -689,7 +562,6 @@ const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, t
             </button>
           </div>
           
-          {/* LOGOUT AND LANGUAGE */}
           <div className="flex items-center space-x-4">
             <button
                 onClick={toggleLanguage}
@@ -712,7 +584,6 @@ const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, t
         <div className="absolute inset-0 bg-green-800 opacity-80"></div>
         <div className="absolute inset-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 text-white">
           <div className="flex items-center mb-4">
-            {/* Avatar Placeholder */}
             <div className="w-16 h-16 rounded-full bg-gray-200 overflow-hidden mr-4">
               <img src="https://placehold.co/64x64/E0E0E0/333333?text=S" alt="Profile" className="object-cover w-full h-full" />
             </div>
@@ -780,7 +651,7 @@ const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, t
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredCrops.length > 0 ? (
                 filteredCrops.map((crop, index) => (
-                  <RecommendedCropCard key={index} {...crop} />
+                  <RecommendedCropCard key={index} {...crop} T={T} handleViewDetails={handleViewDetails} />
                 ))
             ) : (
                 <p className="text-gray-500 col-span-full p-4 text-center border rounded-lg bg-white">No recommended crops found for the selected soil type ({selectedSoilFilter}).</p>
@@ -788,795 +659,583 @@ const UserDashboard = ({ T, handleLogout, userId, userProfile, setCurrentPage, t
           </div>
         </div>
 
-        {/* History and Knowledge Base Grid (Analytics section moved to dedicated page) */}
-        <div className="grid grid-cols-12 gap-8">
-          <div className="col-span-12 space-y-8">
-            {/* Prediction History */}
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.HISTORY}</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {['Date', 'Crop', 'Profit', 'Inputs'].map(header => (
-                        <th key={header} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{header}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {data.predictionHistory.map((item, index) => (
-                      <tr key={index}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.date}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.crop}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">{item.profit}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.inputs}</td>
-                      </tr>
+        {/* History and Knowledge Base Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Prediction History */}
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.HISTORY}</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['Date', 'Crop', 'Profit', 'Inputs'].map(header => (
+                      <th key={header} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{header}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {data.predictionHistory.map((item, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.date}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.crop}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">{item.profit}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.inputs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          </div>
 
-            {/* Knowledge Base */}
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.KNOWLEDGE}</h3>
-              <div className="grid grid-cols-3 gap-4">
-                {data.knowledgeBase.map((item, index) => (
-                  <div key={index} className="rounded-lg overflow-hidden border border-gray-200 text-center hover:shadow-md transition">
-                    {/* Use mockCropDetails image for Knowledge Base */}
-                    <img 
-                      src={mockCropDetails[item.name]?.image || item.image} 
-                      alt={item.name} 
-                      className="w-full h-24 object-cover" 
-                      onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x400/B8860B/FFFFFF?text=Crop"; }}
-                    />
-                    <p className="py-2 text-sm font-medium text-gray-700">{item.name}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* Knowledge Base */}
+          <div className="bg-white p-6 rounded-xl shadow-lg">
+             <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.KNOWLEDGE}</h3>
+             <div className="grid grid-cols-1 gap-4">
+                 {data.knowledgeBase.map((item, idx) => (
+                    <button key={idx} className="flex items-center space-x-3 p-3 hover:bg-green-50 rounded-lg transition w-full text-left border border-transparent hover:border-green-100" onClick={() => handleViewDetails(item.name)}>
+                        <img src={item.image} alt={item.name} className="w-12 h-12 rounded-full object-cover border-2 border-green-200" onError={(e) => { e.target.onerror=null; e.target.src="https://placehold.co/100x70/B8860B/FFFFFF?text=Crop"; }} />
+                        <span className="font-medium text-gray-800">{item.name}</span>
+                        <ChevronRight className="w-5 h-5 text-gray-400 ml-auto" />
+                    </button>
+                 ))}
+             </div>
           </div>
         </div>
       </div>
-      {/* Dashboard Footer (matches image) */}
-      <footer className="bg-green-900 mt-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-center space-x-6 text-xs text-white">
-          <p>About us</p>
-          <p>Contact</p>
-          <p>Privacy</p>
-          <p>Support</p>
-        </div>
-      </footer>
-      
-      {/* Crop Details Modal */}
-      {selectedCrop && (
-          <CropDetailsModal T={T} cropName={selectedCrop} onClose={handleCloseDetails} />
-      )}
     </div>
   );
 };
 
-// --- 7. DEDICATED VIEWS (Prediction, Analytics, Crops, Profile) ---
-
-const AnalyticsSection = ({ T }) => (
-    <div className="col-span-12 space-y-6">
-      <h2 className="text-3xl font-bold text-gray-800 mb-4 flex items-center">
-        <BarChart className="w-6 h-6 mr-2 text-green-600" /> {T.ANALYTICS_OVERVIEW}
-      </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-lg">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.PROFIT_TREND}</h3>
-          <Line data={mockDashboardData.analytics.profitTrend} options={{ responsive: true, plugins: { legend: { display: true } } }} />
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-lg">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4">{T.CROP_FREQUENCY}</h3>
-          <div className="h-64 flex justify-center items-center">
-            <Doughnut data={mockDashboardData.analytics.cropFrequency} options={{ responsive: true, maintainAspectRatio: false }} />
-          </div>
-        </div>
-      </div>
-      
-      <div className="p-6 bg-yellow-50 text-yellow-800 rounded-lg shadow-inner flex items-center">
-          <Gauge className="w-6 h-6 mr-3" />
-          <p>{T.WIP_MESSAGE}</p>
-      </div>
-    </div>
-  );
-
-
-const AnalyticsView = ({ T }) => (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      <AnalyticsSection T={T} />
-    </div>
-);
-
-const CropsView = ({ T, handleViewDetails }) => ( // Added handleViewDetails prop
-    <div className="p-4 md:p-8 max-w-7xl mx-auto">
-        <h1 className="text-4xl font-extrabold text-green-700 mb-8 flex items-center">
-            <Wheat className="w-8 h-8 mr-3" />
-            {T.CROP_CATALOG}
-        </h1>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {Object.keys(mockCropDetails).map(cropName => {
-                const data = mockCropDetails[cropName];
-                return (
-                    <div key={cropName} className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-                        <img src={data.image} alt={cropName} className="w-full h-32 object-cover" />
-                        <div className="p-4">
-                            <h3 className="text-xl font-semibold text-gray-800">{cropName}</h3>
-                            <p className="text-sm text-gray-600 mt-1 truncate">{data.botany}</p>
-                            <button 
-                                onClick={() => handleViewDetails(cropName)} // Fixed button action
-                                className="mt-3 w-full text-center py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition">
-                                {T.VIEW_DETAILS}
-                            </button>
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-        
-        <div className="mt-8 p-6 bg-yellow-50 text-yellow-800 rounded-lg shadow-inner flex items-center">
-          <Gauge className="w-6 h-6 mr-3" />
-          <p>{T.WIP_MESSAGE}</p>
-        </div>
-    </div>
-);
-
-const ProfileView = ({ T, userProfile }) => (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto">
-        <h1 className="text-4xl font-extrabold text-green-700 mb-8 flex items-center">
-            <User className="w-8 h-8 mr-3" />
-            {T.PROFILE_DETAILS}
-        </h1>
-        
-        <div className="bg-white p-8 rounded-xl shadow-2xl space-y-6">
-            <div className="flex items-center space-x-6 border-b pb-4">
-                <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center text-4xl text-green-700 font-bold">
-                    {userProfile?.firstName?.charAt(0) || 'F'}
-                </div>
-                <div>
-                    <p className="text-2xl font-bold text-gray-800">{userProfile?.firstName} {userProfile?.lastName}</p>
-                    <p className="text-md text-gray-500">{userProfile?.email}</p>
-                </div>
-            </div>
-            
-            <ProfileDetailRow Icon={Mail} label={T.EMAIL} value={userProfile?.email || 'N/A'} />
-            <ProfileDetailRow Icon={Phone} label={T.MOBILE} value={userProfile?.mobile || 'N/A'} />
-            <ProfileDetailRow Icon={MapPin} label={T.CITY} value={userProfile?.city || 'N/A'} />
-            <ProfileDetailRow Icon={Globe} label={T.COUNTRY} value={userProfile?.country || 'N/A'} />
-        </div>
-        <div className="mt-8 p-6 bg-yellow-50 text-yellow-800 rounded-lg shadow-inner flex items-center">
-          <Gauge className="w-6 h-6 mr-3" />
-          <p>{T.WIP_MESSAGE}</p>
-        </div>
-    </div>
-);
-
-const ProfileDetailRow = ({ Icon, label, value }) => (
-    <div className="grid grid-cols-3 gap-4 border-b border-gray-100 pb-3">
-        <div className="flex items-center text-gray-600 font-medium space-x-2">
-            <Icon className="w-5 h-5 text-green-600" />
-            <span>{label}</span>
-        </div>
-        <div className="col-span-2 text-gray-800">{value}</div>
-    </div>
-);
-
-
-const PredictionView = ({ T, userId, isAuthReady }) => {
-    const [params, setParams] = useState({
-        temperature: 25,
-        humidity: 65,
-        soilType: T.SOIL_TYPES[0],
-        nLevel: 90,
-        pLevel: 42,
-        kLevel: 40,
-        phLevel: 6.5,
-        rainfall: 1000,
-        location: 'Current Area',
+const PredictionView = ({ T, userId, isAuthReady, setCurrentPage }) => {
+    const [formData, setFormData] = useState({
+        temperature: '', humidity: '', nLevel: '', pLevel: '', kLevel: '', 
+        phLevel: '', rainfall: '', soilType: 'Loam'
     });
+    const [loading, setLoading] = useState(false);
     const [prediction, setPrediction] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [marketInsights, setMarketInsights] = useState(null);
     const [error, setError] = useState(null);
 
     const handleChange = (e) => {
-        const { name, value, type } = e.target;
-        setParams(prev => ({
-            ...prev,
-            [name]: type === 'number' ? parseFloat(value) : value,
-        }));
+        setFormData({ ...formData, [e.target.name]: e.target.value });
     };
-
-    const savePredictionToHistory = useCallback(async (input, result) => {
-        if (!userId || !db) return; 
-
-        try {
-            const historyRef = collection(db, 'artifacts', appId, 'users', userId, 'predictions');
-            await addDoc(historyRef, {
-                input,
-                result,
-                timestamp: serverTimestamp(),
-            });
-        } catch (e) {
-            console.error("Error adding prediction history: ", e);
-        }
-    }, [userId]);
 
     const handlePredict = async (e) => {
         e.preventDefault();
-        setIsLoading(true);
+        setLoading(true);
         setError(null);
         setPrediction(null);
+        setMarketInsights(null);
 
         try {
-            // 1. Core ML Prediction (Simulated backend call)
-            const suggestedCrop = simulateCropPrediction(params);
+            const predictRes = await fetch(`${API_BASE_URL}/predict`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            
+            if (!predictRes.ok) throw new Error("Prediction failed");
+            const predictData = await predictRes.json();
+            const crop = predictData.suggested_crop;
+            setPrediction(crop);
 
-            // 2. Fetch External Data (Simulated backend call)
-            const externalData = await simulateExternalAPIs(suggestedCrop, params.location);
-
-            const result = {
-                crop: suggestedCrop,
-                weather: externalData.weather,
-                profit: externalData.profit,
-                risk: externalData.risk,
-            };
-
-            setPrediction(result);
-            if (isAuthReady && userId) {
-                savePredictionToHistory(params, result);
+            const insightRes = await fetch(`${API_BASE_URL}/market-insights?crop_name=${crop}`);
+            if (insightRes.ok) {
+                const insightData = await insightRes.json();
+                setMarketInsights(insightData);
             }
-        } catch (e) {
-            console.error(e);
+        } catch (err) {
+            console.error(err);
             setError(T.ERROR_API);
         } finally {
-            setIsLoading(false);
+            setLoading(false);
         }
     };
 
-    const InputField = ({ label, name, type = 'number', icon: Icon, min = 0, max = 200, step = 1, unit = '' }) => (
-        <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-            <div className="relative mt-1 rounded-md shadow-sm">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <Icon className="h-5 w-5 text-green-500" />
-                </div>
-                <input
-                    type={type}
-                    name={name}
-                    value={params[name]}
-                    onChange={handleChange}
-                    min={min}
-                    max={max}
-                    step={step}
-                    required
-                    className="block w-full rounded-lg border-gray-300 pl-10 pr-10 py-2 text-base focus:border-green-500 focus:ring-green-500 transition"
-                />
-                {unit && <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 text-sm">{unit}</span>}
-            </div>
-        </div>
-    );
-
-    const ResultCard = ({ title, icon: Icon, content, subContent, color }) => (
-      <div className={`p-4 md:p-6 rounded-xl shadow-lg border ${color || 'bg-white'} transition duration-300 transform hover:shadow-xl`}>
-        <div className="flex items-center space-x-4 mb-3">
-          <Icon className={`w-8 h-8 text-white`} />
-          <h3 className={`text-xl font-semibold text-white`}>{title}</h3>
-        </div>
-        <div className="text-2xl font-bold tracking-tight text-white">
-          {content}
-        </div>
-        {subContent && <p className={`text-sm mt-1 text-gray-200`}>{subContent}</p>}
-      </div>
-    );
-
     return (
-        <div className="p-4 md:p-8 max-w-7xl mx-auto">
-            <h1 className="text-4xl font-extrabold text-green-700 mb-8 flex items-center">
-                <Wheat className="w-8 h-8 mr-3" />
-                {T.PREDICTION}
-            </h1>
-
-            <div className="p-4 md:p-8 bg-white rounded-xl shadow-2xl">
-                <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center">
-                    <Barcode className="w-7 h-7 mr-3 text-green-600" />
-                    {T.INPUT_PARAMS}
+        <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+            <div className="max-w-6xl mx-auto mb-6 flex items-center justify-between">
+                <button onClick={() => setCurrentPage('dashboard')} className="flex items-center text-gray-600 hover:text-green-700 font-medium">
+                    <ChevronDown className="w-5 h-5 rotate-90 mr-1" /> Back
+                </button>
+                <h2 className="text-3xl font-bold text-gray-800 flex items-center">
+                    <FlaskConical className="w-8 h-8 mr-3 text-green-600" /> {T.PREDICTION}
                 </h2>
-                <form onSubmit={handlePredict} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {/* Environmental Inputs */}
-                    <InputField label={T.TEMPERATURE} name="temperature" icon={Thermometer} min={-10} max={50} step={0.1} unit="°C" />
-                    <InputField label={T.HUMIDITY} name="humidity" icon={Droplet} min={0} max={100} unit="%" />
-                    <InputField label={T.RAINFALL} name="rainfall" icon={Cloud} min={0} max={5000} unit="mm" />
-                    <InputField label={T.PH_LEVEL} name="phLevel" icon={FlaskConical} min={0} max={14} step={0.1} />
+                <div className="w-10"></div>
+            </div>
 
-                    {/* Soil Nutrient Inputs (NPK) */}
-                    <InputField label={T.N_LEVEL} name="nLevel" icon={Sprout} max={200} unit="kg/ha" />
-                    <InputField label={T.P_LEVEL} name="pLevel" icon={Sprout} max={200} unit="kg/ha" />
-                    <InputField label={T.K_LEVEL} name="kLevel" icon={Sprout} max={200} unit="kg/ha" />
-
-                    {/* Location/Soil Type */}
-                    <div className="relative">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Soil Type</label>
-                        <div className="relative mt-1 rounded-md shadow-sm">
-                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                <Globe className="h-5 w-5 text-green-500" />
-                            </div>
-                            <select
-                                name="soilType"
-                                value={params.soilType}
-                                onChange={handleChange}
-                                required
-                                className="block w-full rounded-lg border-gray-300 pl-10 pr-3 py-2 text-base focus:border-green-500 focus:ring-green-500 transition appearance-none"
-                            >
-                                {T.SOIL_TYPES.map((type, index) => (
-                                    <option key={index} value={type}>{type}</option>
-                                ))}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg h-fit">
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">{T.INPUT_PARAMS}</h3>
+                    <form onSubmit={handlePredict} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <AuthFormInput label="Temp (°C)" name="temperature" type="number" value={formData.temperature} onChange={handleChange} icon={Thermometer} />
+                            <AuthFormInput label={T.HUMIDITY} name="humidity" type="number" value={formData.humidity} onChange={handleChange} icon={Droplet} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <AuthFormInput label={T.N_LEVEL} name="nLevel" type="number" value={formData.nLevel} onChange={handleChange} icon={Sprout} />
+                            <AuthFormInput label={T.P_LEVEL} name="pLevel" type="number" value={formData.pLevel} onChange={handleChange} icon={Sprout} />
+                            <AuthFormInput label={T.K_LEVEL} name="kLevel" type="number" value={formData.kLevel} onChange={handleChange} icon={Sprout} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <AuthFormInput label={T.RAINFALL} name="rainfall" type="number" value={formData.rainfall} onChange={handleChange} icon={Cloud} />
+                            <AuthFormInput label={T.PH_LEVEL} name="phLevel" type="number" value={formData.phLevel} onChange={handleChange} icon={FlaskConical} />
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Soil Type</label>
+                            <select name="soilType" value={formData.soilType} onChange={handleChange} className="block w-full rounded-lg border-gray-300 p-2 border focus:border-green-500 focus:ring-green-500">
+                                {T.SOIL_TYPES.map(soil => <option key={soil} value={soil}>{soil}</option>)}
                             </select>
                         </div>
-                    </div>
-                
-                    <InputField label="Location/Area" name="location" type="text" icon={MapPin} max={100} unit="" />
-                
-                    <div className="col-span-full mt-4">
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full md:w-auto px-8 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                        >
-                            {isLoading && <Loader2 className="w-5 h-5 mr-2 animate-spin" />}
-                            {T.PREDICT}
+
+                        <button type="submit" disabled={loading} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 transition flex justify-center items-center">
+                            {loading ? <Loader2 className="animate-spin mr-2" /> : <Search className="mr-2" />}
+                            {loading ? T.FETCHING_DATA : T.PREDICT}
                         </button>
-                    </div>
-                </form>
-            </div>
+                    </form>
+                    {error && <p className="text-red-500 mt-4 text-center font-medium bg-red-50 p-2 rounded-lg border border-red-200">{error}</p>}
+                </div>
 
-            {(prediction || isLoading || error) && (
-                <div className="mt-12">
-                    <h2 className="text-3xl font-bold text-gray-800 mb-6 flex items-center">
-                        <TrendingUp className="w-7 h-7 mr-3 text-green-600" />
-                        {T.PREDICTION_RESULT}
-                    </h2>
-
-                    {isLoading && (
-                        <div className="text-center p-12 bg-white rounded-xl shadow-lg">
-                            <Loader2 className="w-10 h-10 animate-spin mx-auto text-green-600" />
-                            <p className="mt-3 text-green-600 font-semibold">{T.FETCHING_DATA}</p>
-                        </div>
-                    )}
-
-                    {error && (
-                        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg flex items-center">
-                            <X className="w-5 h-5 mr-3" />
-                            {error}
-                        </div>
-                    )}
-
-                    {prediction && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Suggested Crop Card */}
-                            <ResultCard
-                                title={T.CROP_SUGGESTED}
-                                icon={Sprout}
-                                content={prediction.crop}
-                                subContent={`(Optimal for your inputs)`}
-                                color="bg-green-600"
-                            />
-
-                            {/* Profit Analysis Card */}
-                            <ResultCard
-                                title={T.ESTIMATED_PROFIT}
-                                icon={DollarSign}
-                                content={prediction.profit}
-                                subContent={`${T.RISK_LEVEL}: ${prediction.risk}`}
-                                color="bg-yellow-600"
-                            />
-
-                            {/* Weather Forecast Card */}
-                            <ResultCard
-                                title={T.WEATHER_FORECAST}
-                                icon={Cloud}
-                                content={prediction.weather}
-                                subContent="Based on location input."
-                                color="bg-blue-600"
-                            />
+                <div className="lg:col-span-2 space-y-6">
+                    {prediction ? (
+                        <div className="bg-white p-8 rounded-xl shadow-lg border-2 border-green-100 animate-fade-in">
+                            <div className="flex items-center mb-6">
+                                <CheckCircle className="w-12 h-12 text-green-600 mr-4" />
+                                <div>
+                                    <h3 className="text-lg text-gray-500 font-medium">{T.PREDICTION_RESULT}</h3>
+                                    <p className="text-5xl font-extrabold text-green-800">{prediction}</p>
+                                </div>
+                            </div>
                             
+                            {marketInsights && (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8 pt-8 border-t border-gray-100">
+                                    <div className="p-5 bg-blue-50 rounded-xl border border-blue-100">
+                                        <div className="flex items-center mb-2">
+                                            <Cloud className="w-5 h-5 text-blue-600 mr-2" />
+                                            <p className="text-sm text-blue-800 font-bold">{T.WEATHER_FORECAST}</p>
+                                        </div>
+                                        <p className="text-gray-800 text-sm leading-relaxed">{marketInsights.weather}</p>
+                                    </div>
+                                    <div className="p-5 bg-green-50 rounded-xl border border-green-100">
+                                         <div className="flex items-center mb-2">
+                                            <DollarSign className="w-5 h-5 text-green-600 mr-2" />
+                                            <p className="text-sm text-green-800 font-bold">{T.ESTIMATED_PROFIT}</p>
+                                        </div>
+                                        <p className="text-gray-900 font-bold text-2xl">{marketInsights.profit}</p>
+                                    </div>
+                                    <div className={`p-5 rounded-xl border ${marketInsights.risk === 'High' ? 'bg-red-50 border-red-100' : 'bg-yellow-50 border-yellow-100'}`}>
+                                         <div className="flex items-center mb-2">
+                                            <AlertTriangle className={`w-5 h-5 mr-2 ${marketInsights.risk === 'High' ? 'text-red-600' : 'text-yellow-600'}`} />
+                                            <p className={`text-sm font-bold ${marketInsights.risk === 'High' ? 'text-red-800' : 'text-yellow-800'}`}>{T.RISK_LEVEL}</p>
+                                        </div>
+                                        <p className="text-gray-900 font-bold text-2xl">{marketInsights.risk}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400 bg-gray-100 rounded-xl border-2 border-dashed border-gray-300 p-10">
+                            <Sprout className="w-20 h-20 mb-6 text-gray-300" />
+                            <p className="text-xl font-medium text-gray-500">Enter parameters to get AI suggestions</p>
+                            <p className="text-sm text-gray-400 mt-2">We analyze soil, weather, and market data.</p>
                         </div>
                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CropsView = ({ T, handleViewDetails }) => {
+    const [crops, setCrops] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch(`${API_BASE_URL}/crops`)
+            .then(res => res.json())
+            .then(data => setCrops(data))
+            .catch(err => console.error(err))
+            .finally(() => setLoading(false));
+    }, []);
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+            <h2 className="text-3xl font-bold text-gray-800 mb-8 max-w-7xl mx-auto flex items-center"><Wheat className="mr-3 text-green-600" /> {T.CROP_CATALOG}</h2>
+            {loading ? (
+                <div className="flex justify-center h-64 items-center"><Loader2 className="animate-spin w-10 h-10 text-green-600" /></div>
+            ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
+                    {crops.map((crop, idx) => (
+                        <div key={idx} className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition group">
+                             <div className="h-40 overflow-hidden relative">
+                                <img src={crop.image} alt={crop.name} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x400/CCCCCC/333333?text=Crop"; }} />
+                                <div className="absolute top-0 right-0 bg-green-600 text-white text-xs font-bold px-2 py-1 m-2 rounded">{crop.soil_type || 'General'}</div>
+                             </div>
+                             <div className="p-5">
+                                 <h3 className="text-lg font-bold text-gray-800 mb-1">{crop.name}</h3>
+                                 <p className="text-green-600 font-semibold mb-3">{crop.profit}</p>
+                                 <button onClick={() => handleViewDetails(crop.name)} className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-green-600 hover:text-white transition font-medium">
+                                     {T.VIEW_DETAILS}
+                                 </button>
+                             </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>
     );
 };
 
+const AnalyticsView = ({ T }) => {
+    const [data, setData] = useState(null);
 
-// --- 8. LANDING PAGE (Scrollable Sections) ---
+    useEffect(() => {
+        fetch(`${API_BASE_URL}/analytics`)
+            .then(res => res.json())
+            .then(data => setData(data))
+            .catch(err => console.error(err));
+    }, []);
+
+    if (!data) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin w-10 h-10 text-green-600" /></div>;
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+            <h2 className="text-3xl font-bold text-gray-800 mb-8 max-w-7xl mx-auto flex items-center"><BarChart className="mr-3 text-blue-600" /> {T.ANALYTICS_OVERVIEW}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-7xl mx-auto">
+                <div className="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 className="text-xl font-bold text-gray-700 mb-6">{T.PROFIT_TREND}</h3>
+                    <Line data={data.profitTrend} />
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-lg">
+                    <h3 className="text-xl font-bold text-gray-700 mb-6">{T.CROP_FREQUENCY}</h3>
+                    <div className="h-64 flex justify-center">
+                        <Doughnut data={data.cropFrequency} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ProfileView = ({ T, userProfile }) => {
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 md:p-8 flex items-center justify-center">
+             <div className="bg-white p-8 rounded-xl shadow-2xl max-w-2xl w-full">
+                <div className="flex items-center space-x-4 mb-8 border-b pb-6">
+                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-3xl font-bold text-green-700">
+                        {userProfile?.firstName?.[0] || 'U'}
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900">{userProfile?.firstName} {userProfile?.lastName}</h2>
+                        <p className="text-gray-500">{userProfile?.email}</p>
+                    </div>
+                </div>
+                
+                <h3 className="text-lg font-bold text-gray-800 mb-4">{T.PROFILE_DETAILS}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{T.MOBILE}</p>
+                        <p className="font-medium text-gray-800">{userProfile?.mobile || 'Not provided'}</p>
+                    </div>
+                     <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{T.CITY}</p>
+                        <p className="font-medium text-gray-800">{userProfile?.city || 'Not provided'}</p>
+                    </div>
+                     <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{T.STATE}</p>
+                        <p className="font-medium text-gray-800">{userProfile?.state || 'Not provided'}</p>
+                    </div>
+                     <div className="p-4 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{T.COUNTRY}</p>
+                        <p className="font-medium text-gray-800">{userProfile?.country || 'Not provided'}</p>
+                    </div>
+                </div>
+                
+                <div className="mt-8 flex justify-end">
+                    <button className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">Edit Profile</button>
+                </div>
+             </div>
+        </div>
+    );
+};
+const NavLink = ({ children }) => (
+  <a href="#" className="text-gray-700 hover:text-green-600 font-medium transition">{children}</a>
+);
 
 const LandingPage = ({ T, openAuthModal, toggleLanguage }) => {
-  const sections = [
-    { id: 'home', label: T.HOME, icon: Home },
-    { id: 'about', label: T.ABOUT, icon: Info },
-    { id: 'contact', label: T.CONTACT, icon: Mail },
-  ];
-
-  const scrollToSection = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const Header = ({ isScrolled }) => (
-    <header className={`fixed top-0 left-0 w-full z-40 transition-all duration-300 ${isScrolled ? 'bg-white shadow-lg' : 'bg-green-800'}`}>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-           <Sprout className={`w-8 h-8 ${isScrolled ? 'text-green-600' : 'text-white'}`} fill="currentColor" />
-            <span className={`text-xl font-extrabold tracking-wider ${isScrolled ? 'text-gray-800' : 'text-white'}`}>AgriOptima</span>
-        </div>
-
-        <nav className="hidden md:flex items-center space-x-6">
-          {sections.map(section => (
-            <button
-              key={section.id}
-              onClick={() => scrollToSection(section.id)}
-              className={`text-sm font-medium transition-colors ${isScrolled ? 'text-gray-700 hover:text-green-600' : 'text-white hover:text-green-200'}`}
-            >
-              {section.label}
-            </button>
-          ))}
-          <button
-            onClick={toggleLanguage}
-            className={`flex items-center px-3 py-1 rounded-full transition-colors ${isScrolled ? 'text-gray-700 hover:bg-gray-100' : 'text-white hover:bg-green-700'} border ${isScrolled ? 'border-gray-300' : 'border-green-700'}`}
-            title="Change Language"
-          >
-            <ArrowLeftRight className="w-4 h-4 mr-1" />
-            <span className="text-xs font-semibold">{T === translations.en ? 'हि' : 'EN'}</span>
-          </button>
-          <button
-            onClick={() => openAuthModal('login')}
-            className="px-4 py-2 bg-yellow-400 text-green-900 font-semibold rounded-full shadow-md hover:bg-yellow-500 transition duration-300 flex items-center space-x-2"
-          >
-            <LogIn className="w-4 h-4" />
-            <span>{T.LOGIN} / {T.SIGNUP}</span>
-          </button>
-        </nav>
-        {/* Mobile Menu */}
-         <MobileMenu sections={sections} scrollToSection={scrollToSection} openAuthModal={openAuthModal} T={T} toggleLanguage={toggleLanguage} isScrolled={isScrolled} />
-      </div>
-    </header>
-  );
-  
-  const MobileMenu = ({ sections, scrollToSection, openAuthModal, T, toggleLanguage, isScrolled }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    
-    return (
-      <div className="md:hidden">
-        <button onClick={() => setIsOpen(!isOpen)} className={`${isScrolled ? 'text-gray-700' : 'text-white'}`}>
-          <Menu className="w-6 h-6" />
-        </button>
-        {isOpen && (
-          <div className="absolute right-0 top-14 w-64 bg-white shadow-xl rounded-lg py-2 transition-all">
-            {sections.map(section => (
-              <button
-                key={section.id}
-                onClick={() => { scrollToSection(section.id); setIsOpen(false); }}
-                className="block w-full text-left px-4 py-3 text-gray-700 hover:bg-green-50"
-              >
-                <section.icon className="w-5 h-5 inline mr-2 text-green-600" /> {section.label}
-              </button>
-            ))}
-             <button
-                onClick={toggleLanguage}
-                className="block w-full text-left px-4 py-3 text-gray-700 hover:bg-green-50"
-                title="Change Language"
-              >
-                <ArrowLeftRight className="w-5 h-5 inline mr-2 text-green-600" />
-                <span className="font-semibold">{T === translations.en ? 'हि' : 'EN'}</span>
-            </button>
-            <div className="border-t mt-2 pt-2">
-              <button
-                onClick={() => { openAuthModal('login'); setIsOpen(false); }}
-                className="block w-full text-left px-4 py-3 text-green-600 font-semibold hover:bg-green-50"
-              >
-                <LogIn className="w-5 h-5 inline mr-2" /> {T.LOGIN} / {T.SIGNUP}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-  
   const [isScrolled, setIsScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 50);
-    };
+    const handleScroll = () => setIsScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const HeroSection = () => (
-    <section id="home" className="pt-28 md:pt-40 pb-20 bg-green-800 text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center">
-        <div className="md:w-1/2 mb-10 md:mb-0">
-          <h2 className="text-5xl md:text-6xl font-extrabold leading-tight mb-4">
-            {T.APP_NAME}: <span className="text-yellow-400">{T.SLOGAN}</span>
-          </h2>
-          <p className="text-xl mb-8 opacity-90">
-            {T.ABOUT_TEXT}
-          </p>
-          <button
-            onClick={() => openAuthModal('signup')}
-            className="px-8 py-3 bg-yellow-400 text-green-900 font-bold rounded-full text-lg shadow-xl hover:bg-yellow-500 transition duration-300 transform hover:scale-105"
-          >
-            {T.SIGNUP} Today
-          </button>
-        </div>
-        <div className="md:w-1/2">
-          {/* Image Placeholder - use a relevant farming illustration */}
-          <img
-            src="https://placehold.co/600x400/90EE90/000000?text=AI+Powered+Farming"
-            alt="AI Farming Illustration"
-            className="rounded-xl shadow-2xl"
-            onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x400/90EE90/000000?text=AI+Powered+Farming"; }}
-          />
-        </div>
-      </div>
-    </section>
-  );
-
-  const AboutSection = () => (
-    <section id="about" className="py-20 bg-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-4xl font-extrabold text-gray-800 mb-8 text-center">{T.ABOUT}</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-          <div className="p-6 rounded-xl shadow-lg border-t-4 border-green-600">
-            <Cloud className="w-10 h-10 text-green-600 mx-auto mb-3" />
-            <h3 className="text-xl font-semibold mb-2">Climate Analysis</h3>
-            <p className="text-gray-600">Integrates future weather predictions for optimal sowing times.</p>
-          </div>
-          <div className="p-6 rounded-xl shadow-lg border-t-4 border-green-600">
-            <Sprout className="w-10 h-10 text-green-600 mx-auto mb-3" />
-            <h3 className="text-xl font-semibold mb-2">Soil & Crop Matching</h3>
-            <p className="text-gray-600">Uses ML to match your soil profile (N, P, K) to the best crop yield.</p>
-          </div>
-          <div className="p-6 rounded-xl shadow-lg border-t-4 border-green-600">
-            <TrendingUp className="w-10 h-10 text-green-600 mx-auto mb-3" />
-            <h3 className="text-xl font-semibold mb-2">Profit Maximization</h3>
-            <p className="text-gray-600">Provides profit estimates and risk assessment for financial planning.</p>
-          </div>
-        </div>
-        <p className="mt-12 text-center text-lg text-gray-700 max-w-4xl mx-auto">{T.ABOUT_TEXT}</p>
-      </div>
-    </section>
-  );
-
-  const ContactSection = () => (
-    <section id="contact" className="py-20 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <h2 className="text-4xl font-extrabold text-gray-800 mb-4 text-center">{T.CONTACT_US}</h2>
-        <p className="text-center text-lg text-gray-600 mb-10">{T.CONTACT_TEXT}</p>
-
-        <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl shadow-2xl">
-          <form className="grid grid-cols-1 gap-6">
-            <input type="text" placeholder={T.FNAME} required className="p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" />
-            <input type="email" placeholder={T.EMAIL} required className="p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" />
-            <textarea rows="4" placeholder={T.MESSAGE} required className="p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500 resize-none"></textarea>
-            <button type="submit" className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition">
-              {T.SEND}
-            </button>
-          </form>
-        </div>
-      </div>
-      <footer className="mt-16 text-center text-gray-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} AgriOptima. All rights reserved.</p>
-      </footer>
-    </section>
-  );
-
   return (
-    <div className="min-h-screen">
-      <Header isScrolled={isScrolled} />
-      <main className="mt-[64px] md:mt-[72px]">
-        <HeroSection />
-        <AboutSection />
-        <ContactSection />
-      </main>
+    <div className="font-sans text-gray-800 bg-white">
+      {/* Navbar */}
+      <nav className={`fixed w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-white shadow-md py-2' : 'bg-transparent py-4'}`}>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
+          <div className="flex items-center space-x-2">
+            <div className="bg-green-600 p-2 rounded-lg">
+                <Sprout className="w-6 h-6 text-white" />
+            </div>
+            <span className={`text-2xl font-extrabold tracking-tight ${isScrolled ? 'text-green-800' : 'text-green-900'}`}>{T.APP_NAME}</span>
+          </div>
+          
+          <div className="hidden md:flex items-center space-x-8">
+            <NavLink>{T.HOME}</NavLink>
+            <NavLink>{T.ABOUT}</NavLink>
+            <NavLink>{T.CONTACT}</NavLink>
+            <button onClick={toggleLanguage} className="flex items-center text-gray-700 hover:text-green-600 font-medium transition">
+                <Globe className="w-4 h-4 mr-1" /> {T.LANG_NAME}
+            </button>
+            <button onClick={openAuthModal} className="px-5 py-2 bg-green-600 text-white rounded-full font-semibold shadow-lg hover:bg-green-700 hover:shadow-xl transition transform hover:-translate-y-0.5">
+              {T.LOGIN} / {T.SIGNUP}
+            </button>
+          </div>
+
+          <div className="md:hidden flex items-center">
+             <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-700">
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+             </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white absolute top-full left-0 w-full shadow-lg py-4 px-6 flex flex-col space-y-4">
+            <a href="#" className="text-gray-800 font-medium">{T.HOME}</a>
+            <a href="#" className="text-gray-800 font-medium">{T.ABOUT}</a>
+            <a href="#" className="text-gray-800 font-medium">{T.CONTACT}</a>
+            <button onClick={toggleLanguage} className="text-left text-gray-800 font-medium flex items-center">
+                 <Globe className="w-4 h-4 mr-2" /> {T.LANG_NAME}
+            </button>
+            <button onClick={openAuthModal} className="w-full py-2 bg-green-600 text-white rounded-lg font-semibold">
+              {T.LOGIN}
+            </button>
+          </div>
+        )}
+      </nav>
+
+      {/* Hero Section */}
+      <header className="relative h-screen flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 z-0">
+            <img src="https://placehold.co/1920x1080/228B22/FFFFFF?text=Farm+Landscape" alt="Farm" className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-transparent"></div>
+        </div>
+        
+        <div className="relative z-10 text-center px-4 max-w-4xl mx-auto mt-16">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white mb-6 animate-fade-in-up">
+                <span className="w-2 h-2 rounded-full bg-green-400 mr-2"></span>
+                <span className="text-sm font-medium tracking-wide uppercase">AI-Powered Agriculture</span>
+            </div>
+            <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 leading-tight tracking-tight drop-shadow-lg animate-fade-in-up delay-100">
+                {T.SLOGAN}
+            </h1>
+            <p className="text-xl md:text-2xl text-gray-100 mb-10 max-w-2xl mx-auto font-light animate-fade-in-up delay-200">
+                Maximize your yield with data-driven insights. Get real-time crop suggestions, weather forecasts, and market analysis.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4 animate-fade-in-up delay-300">
+                <button onClick={openAuthModal} className="px-8 py-4 bg-green-600 text-white rounded-full font-bold text-lg shadow-lg hover:bg-green-500 hover:shadow-green-500/30 transition transform hover:-translate-y-1 flex items-center">
+                    Get Started Free <ChevronRight className="ml-2 w-5 h-5" />
+                </button>
+                <button className="px-8 py-4 bg-white text-green-800 rounded-full font-bold text-lg shadow-lg hover:bg-gray-100 transition transform hover:-translate-y-1 flex items-center">
+                    Learn More
+                </button>
+            </div>
+        </div>
+        
+        <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 animate-bounce text-white/70">
+            <ChevronDown className="w-8 h-8" />
+        </div>
+      </header>
+
+      {/* Features Section */}
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Why Choose AgriOptima?</h2>
+                <p className="text-xl text-gray-600 max-w-2xl mx-auto">We combine advanced technology with agricultural expertise to help you make the best decisions for your farm.</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+                {[
+                    { icon: Sprout, title: "Smart Crop Suggestions", desc: "AI analysis of soil and climate to recommend the most profitable crops." },
+                    { icon: Cloud, title: "Weather & Market Insights", desc: "Real-time forecasts and market trends to minimize risk." },
+                    { icon: BarChart, title: "Yield Analytics", desc: "Track performance and optimize your farming strategy over time." }
+                ].map((feature, idx) => (
+                    <div key={idx} className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition duration-300 border border-gray-100 group">
+                        <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-6 group-hover:bg-green-600 transition duration-300">
+                            <feature.icon className="w-8 h-8 text-green-600 group-hover:text-white transition duration-300" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
+                        <p className="text-gray-600 leading-relaxed">{feature.desc}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+      </section>
+
+      {/* About Section */}
+      <section className="py-20 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center">
+            <div className="md:w-1/2 mb-10 md:mb-0 md:pr-12">
+                <img src="https://placehold.co/600x400/228B22/FFFFFF?text=Farmers+Using+Tablet" alt="About Us" className="rounded-2xl shadow-2xl" />
+            </div>
+            <div className="md:w-1/2">
+                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">{T.ABOUT}</h2>
+                <p className="text-lg text-gray-600 mb-6 leading-relaxed">{T.ABOUT_TEXT}</p>
+                <div className="grid grid-cols-2 gap-6">
+                    <div className="flex items-start">
+                        <CheckCircle className="w-6 h-6 text-green-600 mr-3 mt-1" />
+                        <div>
+                            <h4 className="font-bold text-gray-900">Data Driven</h4>
+                            <p className="text-sm text-gray-500">Backed by extensive agricultural datasets.</p>
+                        </div>
+                    </div>
+                    <div className="flex items-start">
+                        <CheckCircle className="w-6 h-6 text-green-600 mr-3 mt-1" />
+                        <div>
+                            <h4 className="font-bold text-gray-900">Farmer First</h4>
+                            <p className="text-sm text-gray-500">Designed with the needs of farmers in mind.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </section>
+
+      {/* Contact Section */}
+      <section className="py-20 bg-green-900 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 className="text-3xl md:text-4xl font-bold mb-6">{T.CONTACT_US}</h2>
+            <p className="text-xl text-green-100 mb-10 max-w-2xl mx-auto">{T.CONTACT_TEXT}</p>
+            <button className="px-8 py-3 bg-white text-green-900 rounded-full font-bold hover:bg-green-50 transition">
+                {T.SEND}
+            </button>
+        </div>
+      </section>
+
+      <footer className="bg-gray-900 text-gray-400 py-12 border-t border-gray-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+                <div className="flex items-center space-x-2 mb-4">
+                    <Sprout className="w-6 h-6 text-green-500" />
+                    <span className="text-xl font-bold text-white">AgriOptima</span>
+                </div>
+                <p className="text-sm">Empowering farmers with intelligent technology for a sustainable future.</p>
+            </div>
+            <div>
+                <h4 className="text-white font-bold mb-4">Product</h4>
+                <ul className="space-y-2 text-sm">
+                    <li><a href="#" className="hover:text-green-500">Features</a></li>
+                    <li><a href="#" className="hover:text-green-500">Pricing</a></li>
+                    <li><a href="#" className="hover:text-green-500">API</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4 className="text-white font-bold mb-4">Company</h4>
+                <ul className="space-y-2 text-sm">
+                    <li><a href="#" className="hover:text-green-500">About</a></li>
+                    <li><a href="#" className="hover:text-green-500">Blog</a></li>
+                    <li><a href="#" className="hover:text-green-500">Careers</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4 className="text-white font-bold mb-4">Connect</h4>
+                <div className="flex space-x-4">
+                    {/* Social Icons Placeholders */}
+                    <div className="w-8 h-8 bg-gray-800 rounded-full hover:bg-green-600 transition"></div>
+                    <div className="w-8 h-8 bg-gray-800 rounded-full hover:bg-green-600 transition"></div>
+                    <div className="w-8 h-8 bg-gray-800 rounded-full hover:bg-green-600 transition"></div>
+                </div>
+            </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-gray-800 text-center text-sm">
+            &copy; 2025 AgriOptima. All rights reserved.
+        </div>
+      </footer>
     </div>
   );
 };
 
-
-// --- 9. MAIN APP COMPONENT ---
-
 const App = () => {
   const [currentLang, setCurrentLang] = useState('en');
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [currentPage, setCurrentPage] = useState('landing');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [authType, setAuthType] = useState('login'); // 'login' or 'signup'
-  const [selectedCrop, setSelectedCrop] = useState(null); // Lifted modal state for sharing
+  const [authType, setAuthType] = useState('login');
+  const [selectedCrop, setSelectedCrop] = useState(null);
+
   const T = translations[currentLang];
 
-  const toggleLanguage = useCallback(() => {
-    setCurrentLang(prev => prev === 'en' ? 'hi' : 'en');
+  useEffect(() => {
+    // Simulate Auth Check
+    setTimeout(() => {
+        setIsAuthReady(true);
+        // Check local storage or session
+        const storedUser = localStorage.getItem('agri_user');
+        if (storedUser) {
+            setUser(JSON.parse(storedUser));
+            setCurrentPage('dashboard');
+        }
+    }, 1000);
   }, []);
-  
+
+  const toggleLanguage = () => setCurrentLang(prev => prev === 'en' ? 'hi' : 'en');
+
+  const handleAuthAction = async (data, isSignup) => {
+      // Mock Auth
+      const userObj = { uid: 'mock-uid', email: data.email };
+      setUser(userObj);
+      if (isSignup) {
+          setUserProfile(data);
+          localStorage.setItem('agri_user_profile', JSON.stringify(data));
+      }
+      localStorage.setItem('agri_user', JSON.stringify(userObj));
+      setCurrentPage('dashboard');
+      return true;
+  };
+
+  const handleLogout = () => {
+      setUser(null);
+      setUserProfile(null);
+      localStorage.removeItem('agri_user');
+      localStorage.removeItem('agri_user_profile');
+      setCurrentPage('landing');
+  };
+
   const handleViewDetails = (cropName) => {
       setSelectedCrop(cropName);
   };
-  
-  const handleCloseDetails = () => {
-      setSelectedCrop(null);
-  };
-
-  const openAuthModal = useCallback((type) => {
-    setAuthType(type);
-    setIsModalOpen(true);
-  }, []);
-  
-  // --- Authentication Handlers ---
-  const handleAuthAction = async (data, isSignup) => {
-    if (!auth || !db) return false;
-    try {
-      if (isSignup) {
-        // Sign Up attempt
-        const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-        const user = userCredential.user;
-        const userDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
-        
-        await setDoc(userDocRef, {
-          email: data.email,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          city: data.city,
-          state: data.state,
-          country: data.country,
-          mobile: data.mobile,
-          createdAt: serverTimestamp(),
-        });
-        return true;
-      } else {
-        // Log In attempt
-        await signInWithEmailAndPassword(auth, data.email, data.password);
-        return true;
-      }
-    } catch (e) {
-      console.error("Auth error:", e.message);
-      // Fallback for when Email/Password provider is disabled in Firebase console.
-      if (e.code === 'auth/operation-not-allowed') {
-          console.warn("Email/Password Sign-in is not allowed. Please enable it in Firebase console or proceed as Guest.");
-      }
-      return false;
-    }
-  };
-
-  const handleLogout = async () => {
-    if (!auth) return;
-    try {
-      await signOut(auth);
-      setIsAuthenticated(false);
-      setUserProfile(null);
-      setCurrentPage('landing');
-    } catch (e) {
-      console.error("Logout error:", e);
-    }
-  };
-
-  // --- Initial Auth Check & Profile Listener ---
-  useEffect(() => {
-    if (!auth || !db) return;
-
-    // 1. Initial anonymous/custom token sign-in
-    const setupAuth = async () => {
-      try {
-        if (initialAuthToken) {
-          // Use provided custom token
-          await signInWithCustomToken(auth, initialAuthToken);
-        } else {
-          // Fallback to anonymous sign-in if no token is available
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Firebase Auth Init Error:", error);
-      }
-    };
-
-    setupAuth();
-
-    // 2. Auth State Listener
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user && !user.isAnonymous) {
-        // User successfully signed up/logged in (or authenticated via custom token)
-        setIsAuthenticated(true);
-        setCurrentPage('dashboard');
-        
-        // 3. Profile Listener
-        const profileDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data');
-        const unsubscribeProfile = onSnapshot(profileDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            setUserProfile(docSnap.data());
-          } else {
-            // Create a default profile if one doesn't exist yet (e.g. immediately after signup)
-            const defaultEmail = user.email || 'N/A';
-            const defaultFirstName = user.email ? user.email.split('@')[0] : 'Farmer';
-            setUserProfile({ email: defaultEmail, firstName: defaultFirstName, lastName: '' });
-          }
-        }, (error) => {
-          console.error("Error fetching user profile:", error);
-        });
-        
-        setIsAuthReady(true);
-        return () => unsubscribeProfile(); // Clean up profile listener
-      } else if (user && user.isAnonymous) {
-          // User is signed in anonymously (initial state if no custom token was present)
-          setIsAuthenticated(false); // Treat as unauthenticated for dashboard purposes
-          setUserProfile({ email: 'guest@agrioptima.com', firstName: 'Guest', lastName: '' });
-          setCurrentPage('landing');
-          setIsAuthReady(true);
-      } else {
-        // Logged out state
-        setIsAuthenticated(false);
-        setUserProfile(null);
-        setCurrentPage('landing');
-        setIsAuthReady(true);
-      }
-    });
-
-    return () => unsubscribeAuth();
-  }, []);
-
 
   const renderContent = () => {
-    if (!isAuthReady) {
-      // Simple full-screen loading state
-      return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-          <Loader2 className="w-12 h-12 animate-spin text-green-600" />
-          <p className="ml-3 text-lg text-gray-600">Loading AgriOptima...</p>
-        </div>
-      );
-    }
-    
-    // Check if the user is explicitly authenticated (not anonymous/guest)
-    if (isAuthenticated && userProfile) {
+      if (!isAuthReady) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin w-10 h-10 text-green-600" /></div>;
+
+      if (currentPage === 'landing') return <LandingPage T={T} openAuthModal={() => { setIsModalOpen(true); setAuthType('login'); }} toggleLanguage={toggleLanguage} />;
+      
       switch (currentPage) {
-        case 'dashboard':
-          return <UserDashboard T={T} handleLogout={handleLogout} userProfile={userProfile} setCurrentPage={setCurrentPage} toggleLanguage={toggleLanguage} />;
-        case 'prediction':
-          return <PredictionView T={T} userId={auth.currentUser?.uid} isAuthReady={true} />;
-        case 'analytics':
-          return <AnalyticsView T={T} />;
-        case 'crops':
-          return <CropsView T={T} handleViewDetails={handleViewDetails} />; // Pass handler to CropsView
-        case 'profile':
-          return <ProfileView T={T} userProfile={userProfile} />;
-        default:
-          return <UserDashboard T={T} handleLogout={handleLogout} userProfile={userProfile} setCurrentPage={setCurrentPage} toggleLanguage={toggleLanguage} />;
+          case 'dashboard': return <UserDashboard T={T} handleLogout={handleLogout} userId={user?.uid} userProfile={userProfile} setCurrentPage={setCurrentPage} toggleLanguage={toggleLanguage} handleViewDetails={handleViewDetails} />;
+          case 'prediction': return <PredictionView T={T} userId={user?.uid} isAuthReady={isAuthReady} setCurrentPage={setCurrentPage} />;
+          case 'crops': return <CropsView T={T} handleViewDetails={handleViewDetails} />;
+          case 'analytics': return <AnalyticsView T={T} />;
+          case 'profile': return <ProfileView T={T} userProfile={userProfile} />;
+          default: return <UserDashboard T={T} />;
       }
-    }
-    
-    return <LandingPage T={T} openAuthModal={openAuthModal} toggleLanguage={toggleLanguage} />;
   };
 
   return (
-    <>
-      {renderContent()}
-      <AuthModal
-        T={T}
-        isModalOpen={isModalOpen}
-        setIsModalOpen={setIsModalOpen}
-        authType={authType}
-        setAuthType={setAuthType}
-        handleAuthAction={handleAuthAction}
-      />
-      
-      {/* Crop Details Modal - Rendered globally to be accessible from any authenticated view */}
-      {selectedCrop && (
-          <CropDetailsModal T={T} cropName={selectedCrop} onClose={handleCloseDetails} />
-      )}
-    </>
+      <>
+        {renderContent()}
+        <AuthModal T={T} isModalOpen={isModalOpen} setIsModalOpen={setIsModalOpen} setAuthType={setAuthType} authType={authType} handleAuthAction={handleAuthAction} />
+        {selectedCrop && <CropDetailsModal T={T} cropName={selectedCrop} onClose={() => setSelectedCrop(null)} />}
+      </>
   );
 };
 
