@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -8,10 +8,7 @@ import random
 app = FastAPI()
 
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+origins = ["*"]  # Allow all for Vercel/Production simplicity
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +34,7 @@ class MarketInsightsInput(BaseModel):
     crop_name: str
     location: Optional[str] = None
 
-# --- Mock Data (Moved from App.jsx) ---
+# --- Mock Data ---
 mock_crop_details = {
     "Rice": { "botany": "Oryza sativa. Semi-aquatic grass, staple food. Requires high heat and heavy rain.", "breed": "Basmati, Sona Masuri.", "profit": "₹75,000", "requirements": { "temp": "25-35", "rainfall": "1200-1500", "ph": "5.5-6.5", "n": "60-90", "p": "30-40", "k": "30-40" }, "image": 'https://placehold.co/600x400/228B22/FFFFFF?text=Rice+Paddy' },
     "Wheat": { "botany": "Triticum aestivum. Temperate cereal, needs cool, dry weather.", "breed": "Durum Wheat, Bread Wheat.", "profit": "₹60,000", "requirements": { "temp": "15-25", "rainfall": "500-1000", "ph": "6.0-7.5", "n": "80-120", "p": "40-60", "k": "20-40" }, "image": 'https://placehold.co/600x400/B8860B/FFFFFF?text=Wheat+Crop' },
@@ -132,7 +129,6 @@ mock_crop_details = {
     "Saffron": { "botany": "Crocus sativus. Spice. Needs extreme cold and specific soil.", "breed": "Kashmir.", "profit": "₹10,00,000", "requirements": { "temp": "5-20", "rainfall": "300-500", "ph": "6.0-8.0", "n": "20-30", "p": "40-60", "k": "40-60" }, "image": 'https://placehold.co/600x400/800080/FFFFFF?text=Saffron+Flower', "soil_type": "Loam" },
 }
 
-# --- Additional Mock Data ---
 mock_analytics_data = {
     "profitTrend": {
         "labels": ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
@@ -174,11 +170,12 @@ class ProfileUpdate(BaseModel):
     state: str
     country: str
 
-# --- Endpoints ---
 
-@app.post("/predict")
+# --- Router Definition ---
+router = APIRouter()
+
+@router.post("/predict")
 async def predict_crop(data: PredictionInput):
-    # Logic moved from simulateCropPrediction
     rainfall = data.rainfall
     temperature = data.temperature
     phLevel = data.phLevel
@@ -187,100 +184,84 @@ async def predict_crop(data: PredictionInput):
     kLevel = data.kLevel
     soilType = data.soilType
 
-    # 1. HIGH VALUE CASH CROPS
     if rainfall > 2000 and temperature > 25 and phLevel < 6.5: return {"suggested_crop": "Black pepper"}
     if rainfall > 2500 and temperature > 20 and phLevel < 5.5: return {"suggested_crop": "Tea"}
     if rainfall > 1000 and temperature > 20 and nLevel > 150: return {"suggested_crop": "Bananas"}
     if rainfall < 600 and temperature < 20 and phLevel > 7.5: return {"suggested_crop": "Saffron"}
     
-    # 2. CEREALS
     if soilType == 'Clay' and temperature > 25 and data.humidity > 60 and nLevel > 60: return {"suggested_crop": "Rice"}
     if soilType == 'Loam' and temperature < 20 and nLevel > 80: return {"suggested_crop": "Wheat"}
     if soilType == 'Silt' and temperature > 20 and pLevel > 50: return {"suggested_crop": "Maize"}
     if temperature < 25 and nLevel > 60 and phLevel > 6.0: return {"suggested_crop": "Barley"}
     
-    # 3. PULSES
     if nLevel < 40 and pLevel > 40 and temperature < 30: return {"suggested_crop": "Gram"}
     if nLevel < 30 and temperature > 25 and rainfall < 800: return {"suggested_crop": "Moth"}
     if nLevel < 30 and temperature > 25 and soilType == 'Loam': return {"suggested_crop": "Soybean"}
     
-    # 4. VEGETABLES/TUBERS
     if temperature < 20 and kLevel > 100: return {"suggested_crop": "Potatoes"}
     if temperature < 25 and kLevel > 80 and phLevel > 6.0: return {"suggested_crop": "Onions"}
     if temperature > 20 and temperature < 30 and nLevel > 100: return {"suggested_crop": "Tomatoes"}
 
-    # 5. MILLETS
     if rainfall < 500 and temperature > 30: return {"suggested_crop": "Jowar (Sorghum)"}
     if rainfall < 400 and temperature > 30: return {"suggested_crop": "Bajra (Pearl Millet)"}
 
-    # Default fallback
     return {"suggested_crop": "Maize"}
 
-@app.get("/market-insights")
+@router.get("/market-insights")
 async def get_market_insights(crop_name: str, location: Optional[str] = "Current Area"):
-    # Logic moved from simulateExternalAPIs
-    await asyncio.sleep(1.5) # Simulate network latency
-
+    await asyncio.sleep(1.5) 
     weather_summary = f"Forecast for {location}: Next 7 days expect avg high of 28°C and 60% humidity. Light rainfall expected on Day 3."
-    
     details = mock_crop_details.get(crop_name, mock_crop_details['Rice'])
     profit = details['profit']
-    
-    # Risk calculation logic
     risk = "Low"
     if '3,50,000' in profit or '10,00,000' in profit:
         risk = "High"
     elif '2,00,000' in profit:
         risk = "Medium"
-        
     return {
         "weather": weather_summary,
         "profit": profit,
         "risk": risk
     }
 
-@app.get("/crops")
+@router.get("/crops")
 async def get_all_crops():
-    # Convert dictionary to list for easier frontend consumption, or keep as dict.
-    # Frontend expects an array based on previous code: crops.map(...)
-    # But wait, previous code was crops.map which implies array.
-    # However, mock_crop_details is a DICT.
-    # The previous frontend code was:
-    # const [crops, setCrops] = useState([]); ... setCrops(data); ... crops.map(...)
-    # If data is a dict, crops.map will fail.
-    # So I should return a list of objects here.
-    
     crops_list = []
     for name, details in mock_crop_details.items():
         crop_item = details.copy()
         crop_item['name'] = name
-        # Add a default soil type if not present (I'll add them to the dict in a separate edit or just default here)
         if 'soil_type' not in crop_item:
-             # Assign random soil type for demo purposes if missing
              crop_item['soil_type'] = random.choice(["Clay", "Loam", "Silt", "Sandy", "Red", "Peat"])
         crops_list.append(crop_item)
     return crops_list
 
-@app.get("/crops/{crop_name}")
+@router.get("/crops/{crop_name}")
 async def get_crop_details(crop_name: str):
     crop = mock_crop_details.get(crop_name)
     if not crop:
         raise HTTPException(status_code=404, detail="Crop not found")
     return crop
 
-@app.get("/analytics")
+@router.get("/analytics")
 async def get_analytics():
     return mock_analytics_data
 
-@app.get("/profile")
+@router.get("/profile")
 async def get_profile():
     return mock_user_profile
 
-@app.put("/profile")
+@router.put("/profile")
 async def update_profile(profile: ProfileUpdate):
     global mock_user_profile
     mock_user_profile.update(profile.dict())
     return mock_user_profile
+
+# --- Register Router ---
+# Include without prefix for local development (http://localhost:8000/predict)
+app.include_router(router)
+
+# Include WITH prefix for Vercel/Production if rewrite keeps path (http://.../api/predict)
+app.include_router(router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn
