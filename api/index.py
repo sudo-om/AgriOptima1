@@ -270,3 +270,7 @@ if __name__ == "__main__":
 @router.get("/debug")
 def debug_endpoint():
     return {"status": "ok", "message": "Backend is reachable"}
+
+@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def catch_all(path_name: str):
+    return {"status": "debug_catch_all", "path_seen": path_name, "message": "Route not found in router but caught here."}
